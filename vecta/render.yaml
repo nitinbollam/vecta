@@ -30,7 +30,7 @@ services:
     plan: starter
     rootDir: vecta
     buildCommand: yarn install && yarn turbo run build --filter=api-gateway...
-    startCommand: node apps/api-gateway/dist/server.js
+    startCommand: node apps/api-gateway/dist/apps/api-gateway/src/server.js
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
