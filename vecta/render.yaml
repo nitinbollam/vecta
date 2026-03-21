@@ -29,7 +29,7 @@ services:
     region: oregon
     plan: starter
     rootDir: vecta
-    buildCommand: yarn install && yarn turbo run build --filter=api-gateway...
+    buildCommand: npm ci && npx turbo run build --filter=api-gateway...
     startCommand: cd apps/api-gateway && node dist/server.js
     healthCheckPath: /health
     envVars:

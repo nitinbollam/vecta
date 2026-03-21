@@ -9,7 +9,7 @@
  *   3. DB constraint simulation (checked via service layer)
  *   4. Consent gate (VehicleEnrollmentService)
  *
- * Run: yarn test --filter=f1-compliance
+ * Run: npx jest __tests__/f1-compliance.test.ts
  */
 
 import { checkPermission, UserRole, PERMISSION_MAP } from '../packages/auth/src/rbac';

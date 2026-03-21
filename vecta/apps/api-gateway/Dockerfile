@@ -1,22 +1,30 @@
 # apps/api-gateway/Dockerfile
 # Multi-stage build — production Node.js image ~180MB
+# Build context must be the monorepo root (folder that contains package.json + package-lock.json).
 
 # ---- deps ----
 FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Install only production deps first (better layer caching)
-COPY package.json yarn.lock ./
-COPY turbo.json ./
-COPY packages/types/package.json       ./packages/types/
-COPY packages/auth/package.json        ./packages/auth/
-COPY packages/crypto/package.json      ./packages/crypto/
-COPY packages/logger/package.json      ./packages/logger/
-COPY packages/database/package.json    ./packages/database/
-COPY packages/storage/package.json     ./packages/storage/
-COPY apps/api-gateway/package.json     ./apps/api-gateway/
+# npm workspaces: every workspace path must exist with a package.json for `npm ci`
+COPY package.json package-lock.json turbo.json ./
+COPY apps/api-gateway/package.json ./apps/api-gateway/
+COPY apps/compliance-ai/package.json ./apps/compliance-ai/
+COPY apps/landlord-portal/package.json ./apps/landlord-portal/
+COPY apps/student-app/package.json ./apps/student-app/
+COPY packages/types/package.json ./packages/types/
+COPY packages/auth/package.json ./packages/auth/
+COPY packages/crypto/package.json ./packages/crypto/
+COPY packages/logger/package.json ./packages/logger/
+COPY packages/database/package.json ./packages/database/
+COPY packages/storage/package.json ./packages/storage/
+COPY services/audit-service/package.json ./services/audit-service/
+COPY services/banking-service/package.json ./services/banking-service/
+COPY services/housing-service/package.json ./services/housing-service/
+COPY services/identity-service/package.json ./services/identity-service/
+COPY services/mobility-service/package.json ./services/mobility-service/
 
-RUN yarn install --frozen-lockfile --production=false
+RUN npm ci
 
 # ---- builder ----
 FROM node:20-alpine AS builder
@@ -25,7 +33,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN yarn turbo run build --filter=api-gateway...
+RUN npx turbo run build --filter=api-gateway...
 
 # ---- runner ----
 FROM node:20-alpine AS runner

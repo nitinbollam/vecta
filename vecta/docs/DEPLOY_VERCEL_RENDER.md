@@ -7,7 +7,7 @@ For **PostgreSQL with pgvector** (roommate embeddings, compliance-ai), [Supabase
 ## Prerequisites
 
 1. **Git repository** with the `vecta` monorepo pushed to GitHub/GitLab/Bitbucket.
-2. **Lockfile** — the Dockerfiles expect `yarn.lock` at the repo root. From `vecta/` run `yarn install` and commit `yarn.lock` so CI and hosts resolve identical dependency trees.
+2. **Lockfile** — commit `vecta/package-lock.json`. Render and Docker use **`npm ci`** from the `vecta/` directory (same tree as local `npm install`).
 3. **Node 20** — both platforms use Node 20 for the Node apps.
 
 ---
@@ -77,7 +77,7 @@ In Supabase: **SQL Editor** (or any `psql` session against this DB):
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-Then run Vecta’s migrations (same order as `yarn db:migrate`), pointing `DATABASE_URL` at Supabase:
+Then run Vecta’s migrations (same order as `npm run db:migrate`), pointing `DATABASE_URL` at Supabase:
 
 ```bash
 psql "$DATABASE_URL" -f packages/database/migrations/001_initial_schema.sql

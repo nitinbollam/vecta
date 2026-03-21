@@ -98,13 +98,13 @@ Fields that are **always vaulted** (AES-256-GCM encrypted, never in JWTs, never 
 - Node.js ≥ 20
 - Python 3.12
 - Docker + Docker Compose
-- Yarn 1.22+
+- npm 10+ (see `packageManager` in root `package.json`)
 
 ### 1. Clone and install
 ```bash
 git clone https://github.com/vecta-io/vecta.git
 cd vecta
-yarn install
+npm install
 ```
 
 ### 2. Configure environment
@@ -123,12 +123,12 @@ docker compose up -d postgres redis
 
 ### 4. Run migrations
 ```bash
-yarn db:migrate
+npm run db:migrate
 ```
 
 ### 5. Start all services
 ```bash
-yarn dev
+npm run dev
 ```
 
 Services start at:

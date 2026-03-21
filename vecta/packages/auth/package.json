@@ -2,24 +2,24 @@
   "name": "@vecta/auth",
   "version": "1.0.0",
   "private": true,
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./middleware": {
-      "types": "./src/middleware.ts",
-      "default": "./src/middleware.ts"
+      "types": "./dist/middleware.d.ts",
+      "default": "./dist/middleware.js"
     },
     "./single-use-token": {
-      "types": "./src/single-use-token.ts",
-      "default": "./src/single-use-token.ts"
+      "types": "./dist/single-use-token.d.ts",
+      "default": "./dist/single-use-token.js"
     },
     "./landlord-access": {
-      "types": "./src/landlord-access.ts",
-      "default": "./src/landlord-access.ts"
+      "types": "./dist/landlord-access.d.ts",
+      "default": "./dist/landlord-access.js"
     }
   },
   "scripts": {

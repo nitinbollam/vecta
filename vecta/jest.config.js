@@ -1,12 +1,6 @@
 // jest.config.js — root Jest configuration
 /** @type {import('jest').Config} */
 module.exports = {
-  projects: [
-    '<rootDir>/packages/*/jest.config.js',
-    '<rootDir>/services/*/jest.config.js',
-    '<rootDir>/apps/api-gateway/jest.config.js',
-  ],
-  // Root-level tests (e.g., __tests__/f1-compliance.test.ts)
   testMatch: ['<rootDir>/__tests__/**/*.test.ts'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
@@ -34,8 +28,7 @@ module.exports = {
     '!**/node_modules/**',
     '!**/dist/**',
   ],
-  coverageThresholds: {
-    // F-1 compliance code must have high coverage
+  coverageThreshold: {
     './packages/auth/src/rbac.ts': {
       branches: 100,
       functions: 100,
@@ -47,5 +40,4 @@ module.exports = {
       lines: 95,
     },
   },
-  setupFilesAfterFramework: [],
 };
