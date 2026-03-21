@@ -2,6 +2,7 @@
 // ─── Vecta API Gateway — Express (TypeScript) ────────────────────────────────
 // The single external-facing entrypoint. Routes all traffic to microservices.
 
+import "./load-env";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
