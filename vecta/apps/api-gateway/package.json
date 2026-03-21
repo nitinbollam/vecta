@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/write-render-entry.cjs",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "start": "node dist/apps/api-gateway/src/server.js",
+    "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "jest"

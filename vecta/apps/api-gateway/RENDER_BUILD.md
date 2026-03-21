@@ -6,9 +6,10 @@ Paste this as the service **Build Command** when the Render **Root Directory** i
 cd vecta/apps/api-gateway && npm install && npm run build && ls -la dist/ && find dist -type f | head -80
 ```
 
-Expected gateway entry (for `ls` sanity check):
+After `npm run build`, `dist/server.js` is generated (shim → `dist/apps/api-gateway/src/server.js`). For `ls` sanity check you should see both:
 
-`dist/apps/api-gateway/src/server.js`
+- `dist/server.js`
+- `dist/apps/api-gateway/src/server.js`
 
 On environments without `find`/`head`, use:
 
@@ -22,16 +23,18 @@ This package’s `tsc` program includes `../../services/**/*.ts` and `../../pack
 
 `dist/apps/api-gateway/src/server.js`
 
-Set **Start Command** accordingly:
+Set **Start Command** to `node dist/server.js` (after `cd` into `apps/api-gateway`):
 
 - **Render root = monorepo `vecta/` folder** (matches `render.yaml` `rootDir: vecta`):
 
 ```bash
-cd apps/api-gateway && node dist/apps/api-gateway/src/server.js
+cd apps/api-gateway && node dist/server.js
 ```
 
 - **Render root = Git repo root** (parent of `vecta/`):
 
 ```bash
-cd vecta/apps/api-gateway && node dist/apps/api-gateway/src/server.js
+cd vecta/apps/api-gateway && node dist/server.js
 ```
+
+You can also use `npm start`, which runs the same path.
