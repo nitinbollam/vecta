@@ -10,7 +10,6 @@ import { VectaNav } from './VectaNav';
  */
 
 import React from 'react';
-import type { LandlordVerificationView } from '@vecta/types';
 
 // ---------------------------------------------------------------------------
 // Layout root
