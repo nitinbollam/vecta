@@ -11,7 +11,7 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import type { SignedTrustCertificate } from '@vecta/auth';
+import type { SignedTrustCertificate } from '../../../../packages/auth/src/crypto-signer';
 import { AcceptTenantButton } from '@/components/AcceptTenantButton';
 import { ProofBadge } from '@/components/ProofBadge';
 
