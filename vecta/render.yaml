@@ -29,7 +29,8 @@ services:
     region: oregon
     plan: starter
     rootDir: vecta
-    buildCommand: npm ci && npx turbo run build --filter=api-gateway...
+    # --include=dev: ensure TypeScript/turbo exist if NODE_ENV=production during install
+    buildCommand: npm ci --include=dev && npx turbo run build --filter=api-gateway...
     startCommand: cd apps/api-gateway && node dist/server.js
     healthCheckPath: /health
     envVars:

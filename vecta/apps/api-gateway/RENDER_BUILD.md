@@ -38,3 +38,11 @@ cd vecta/apps/api-gateway && node dist/server.js
 ```
 
 You can also use `npm start`, which runs the same path.
+
+## Common failures
+
+1. **`cd vecta/apps/api-gateway` with Root Directory = `vecta`** — path becomes `vecta/vecta/...`. Use **`cd apps/api-gateway`** when Root Directory is already `vecta`.
+
+2. **`Cannot find module ... @vecta/types/dist/index.js`** — workspace `main` must stay **`./dist/index.js`**, and the build must run **`npm ci --include=dev && npx turbo run build --filter=api-gateway...`** from the `vecta/` folder so every `@vecta/*` package runs `tsc` (`^build`). Do not point `main` at `src/*.ts` (Node will try to load TS and fail on `enum`, etc.).
+
+3. **`VECTA_JWT_PUBLIC_KEY`** — set in Render **Environment** for any route using JWT auth. The server can boot without it; protected routes return **503** until it is set.

@@ -17,17 +17,15 @@ import type { VectaIDTokenPayload } from '@vecta/types';
 const logger = createLogger('auth-middleware');
 
 // ---------------------------------------------------------------------------
-// Key material
+// Key material (read lazily so @vecta/auth can load before env is guaranteed)
 // ---------------------------------------------------------------------------
 
-const JWT_PUBLIC_KEY = (process.env.VECTA_JWT_PUBLIC_KEY ?? '')
-  .replace(/\\n/g, '\n');
-
-const JWT_ISSUER  = process.env.VECTA_JWT_ISSUER  ?? 'vecta.io';
+const JWT_ISSUER = process.env.VECTA_JWT_ISSUER ?? 'vecta.io';
 const JWT_AUDIENCE = process.env.VECTA_JWT_AUDIENCE ?? 'vecta-platform';
 
-if (!JWT_PUBLIC_KEY) {
-  throw new Error('[auth] VECTA_JWT_PUBLIC_KEY is not set');
+function getJwtPublicKey(): string | null {
+  const k = (process.env.VECTA_JWT_PUBLIC_KEY ?? '').replace(/\\n/g, '\n').trim();
+  return k || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +81,16 @@ export async function authMiddleware(
     crypto.randomUUID();
   res.setHeader('x-correlation-id', req.correlationId);
 
+  const jwtPublicKey = getJwtPublicKey();
+  if (!jwtPublicKey) {
+    logger.error({ correlationId: req.correlationId }, 'VECTA_JWT_PUBLIC_KEY is not set');
+    res.status(503).json({
+      error: 'AUTH_MISCONFIGURED',
+      message: 'JWT verification is not configured on this server.',
+    });
+    return;
+  }
+
   const token = extractBearerToken(req);
   if (!token) {
     res.status(401).json({
@@ -94,7 +102,7 @@ export async function authMiddleware(
 
   let decoded: VectaIDTokenPayload;
   try {
-    decoded = jwt.verify(token, JWT_PUBLIC_KEY, {
+    decoded = jwt.verify(token, jwtPublicKey, {
       algorithms: ['RS256'],
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
