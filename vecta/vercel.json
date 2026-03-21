@@ -1,0 +1,7 @@
+{
+    "buildCommand": "cd apps/landlord-portal && npm install && npm run build",
+    "outputDirectory": "apps/landlord-portal/.next",
+    "installCommand": "echo skip",
+    "framework": "nextjs"
+  }
+  
