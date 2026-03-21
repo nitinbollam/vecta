@@ -184,7 +184,7 @@ router.post('/landlord/onboard', async (req: Request, res: Response) => {
       referralCode:      z.string().optional(),
     }).parse(req.body);
 
-    const result = await onboardLandlord(body);
+    const result = await onboardLandlord(body as Parameters<typeof onboardLandlord>[0]);
     res.status(201).json(result);
   } catch (err) {
     logger.error({ err }, 'Landlord onboard failed');
@@ -203,7 +203,7 @@ router.post('/landlord/acceptance', async (req: Request, res: Response) => {
       universityName: z.string().max(200),
     }).parse(req.body);
 
-    await recordAcceptance(body);
+    await recordAcceptance(body as Parameters<typeof recordAcceptance>[0]);
 
     // Sync to certificate router's lease_applications if not already recorded
     await query(

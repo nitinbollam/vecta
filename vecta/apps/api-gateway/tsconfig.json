@@ -1,17 +1,33 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
     "outDir": "./dist",
     "rootDir": "../..",
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vecta/logger": ["../../packages/logger/src/index.ts"],
+      "@vecta/database": ["../../packages/database/src/index.ts"],
+      "@vecta/crypto": ["../../packages/crypto/src/index.ts"],
+      "@vecta/storage": ["../../packages/storage/src/index.ts"],
+      "@vecta/auth": ["../../packages/auth/src/index.ts"],
+      "@vecta/types": ["../../packages/types/src/index.ts"]
+    }
   },
   "include": [
-    "src",
-    "src/types/**/*.ts",
+    "src/**/*",
     "../../services/**/*.ts",
     "../../packages/providers/**/*.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../../services/**/server.ts"
+  ]
 }
