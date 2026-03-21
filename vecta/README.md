@@ -186,4 +186,4 @@ See [docs/DEPLOY_VERCEL_RENDER.md](docs/DEPLOY_VERCEL_RENDER.md) for landlord po
 
 ## License
 
-Proprietary. © 2025 Vecta Financial Services LLC. All rights reserved.
+Proprietary. © 2025 Vecta ( Fastflyrr LLC) . All rights reserved.
