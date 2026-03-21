@@ -66,10 +66,12 @@ class UnitAPIClient {
 
   constructor() {
     this.baseUrl = process.env.UNIT_API_URL ?? "https://api.s.unit.sh";  // Sandbox default
-    this.bearerToken = process.env.UNIT_API_TOKEN!;
+    this.bearerToken = process.env.UNIT_API_TOKEN ?? "";
+  }
 
+  private ensureConfigured(): void {
     if (!this.bearerToken) {
-      throw new Error("UNIT_API_TOKEN is required");
+      throw new UnitAPIError("Unit.co is not configured. Set UNIT_API_TOKEN.");
     }
   }
 
@@ -78,6 +80,7 @@ class UnitAPIClient {
     path: string,
     body?: unknown
   ): Promise<T> {
+    this.ensureConfigured();
     const init: RequestInit = {
       method,
       headers: {

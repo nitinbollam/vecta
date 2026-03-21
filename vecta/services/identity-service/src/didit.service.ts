@@ -52,15 +52,26 @@ class DiditAPIClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly webhookSecret: string;
+  /** False until DIDIT_API_URL and DIDIT_API_KEY are set — avoids crashing the gateway at import time. */
+  private readonly isApiConfigured: boolean;
 
   constructor() {
-    this.baseUrl = process.env.DIDIT_API_URL!;
-    this.apiKey = process.env.DIDIT_API_KEY!;
-    this.webhookSecret = process.env.DIDIT_WEBHOOK_SECRET!;
+    this.baseUrl = process.env.DIDIT_API_URL ?? "";
+    this.apiKey = process.env.DIDIT_API_KEY ?? "";
+    this.webhookSecret = process.env.DIDIT_WEBHOOK_SECRET ?? "";
+    this.isApiConfigured = Boolean(this.baseUrl && this.apiKey);
+  }
 
-    if (!this.baseUrl || !this.apiKey) {
-      throw new Error("Didit API configuration missing. Set DIDIT_API_URL and DIDIT_API_KEY.");
+  private ensureApiConfigured(): void {
+    if (!this.isApiConfigured) {
+      throw new DiditError(
+        "Didit API is not configured. Set DIDIT_API_URL and DIDIT_API_KEY in the environment.",
+      );
     }
+  }
+
+  isConfigured(): boolean {
+    return this.isApiConfigured;
   }
 
   async createSession(options: {
@@ -68,6 +79,7 @@ class DiditAPIClient {
     webhookUrl: string;
     requiredDocumentTypes: string[];
   }): Promise<{ sessionId: string; sessionUrl: string }> {
+    this.ensureApiConfigured();
     const response = await fetch(`${this.baseUrl}/v1/sessions`, {
       method: "POST",
       headers: {
@@ -93,6 +105,7 @@ class DiditAPIClient {
   }
 
   async getSessionResult(sessionId: string): Promise<DiditSessionResponse> {
+    this.ensureApiConfigured();
     const response = await fetch(`${this.baseUrl}/v1/sessions/${sessionId}`, {
       headers: { "Authorization": `Bearer ${this.apiKey}` },
     });
@@ -104,6 +117,9 @@ class DiditAPIClient {
   }
 
   verifyWebhookSignature(payload: string, signature: string): boolean {
+    if (!this.isApiConfigured || !this.webhookSecret) {
+      return false;
+    }
     const expected = crypto
       .createHmac("sha256", this.webhookSecret)
       .update(payload)
@@ -127,9 +143,11 @@ export class IdentityService {
     private readonly redis: Redis
   ) {
     this.didit = new DiditAPIClient();
-    this.jwtPrivateKey = process.env.VECTA_ID_JWT_PRIVATE_KEY!;
-    this.jwtKid = process.env.VECTA_ID_JWT_KID!;
+    this.jwtPrivateKey = process.env.VECTA_ID_JWT_PRIVATE_KEY ?? "";
+    this.jwtKid = process.env.VECTA_ID_JWT_KID ?? "default";
+  }
 
+  private ensureJwtSigningConfigured(): void {
     if (!this.jwtPrivateKey) {
       throw new Error("JWT private key missing. Set VECTA_ID_JWT_PRIVATE_KEY (RS256 PEM).");
     }
@@ -323,6 +341,7 @@ export class IdentityService {
   // NEVER includes passport number, country of origin, or I-20 details.
 
   async mintVectaIDToken(studentId: string): Promise<string> {
+    this.ensureJwtSigningConfigured();
     const result = await this.db.query(
       `SELECT
         s.id, s.legal_name, s.vecta_id_status, s.visa_type, s.visa_expiry_year,
