@@ -23,7 +23,42 @@
  */
 
 import { useState, useCallback, type ReactNode } from 'react';
-import type { SignedTrustCertificate, TrustAttributes } from '@vecta/auth';
+interface TrustAttributes {
+  studentId: string;
+  kycStatus: 'APPROVED' | 'PENDING' | 'REJECTED' | 'NEEDS_REVIEW';
+  nfcChipVerified: boolean;
+  livenessScore: number;
+  facialMatchScore: number;
+  visaType: string;
+  visaExpiryYear: number;
+  universityName: string;
+  programOfStudy: string;
+  solvencyVerified: boolean;
+  balanceTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
+  guaranteeMonths: number;
+  monthlyRentTarget: number;
+  novaScore: number;
+  novaScoreTier: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'BUILDING';
+  checkrStatus: 'APPROVED' | 'PENDING' | 'REJECTED' | 'SKIPPED' | null;
+  compositeScore: number;
+  guaranteeTier: 'PLATINUM' | 'GOLD' | 'SILVER' | 'STANDARD' | 'INSUFFICIENT';
+  maxRentApproval: number;
+  depositMultiplier: number;
+}
+
+interface SignedTrustCertificate {
+  certId: string;
+  version: '1';
+  issuedAt: string;
+  expiresAt: string;
+  issuer: 'Vecta Financial Services LLC';
+  attributes: TrustAttributes;
+  canonicalHash: string;
+  signature: string;
+  publicKeyHex: string;
+  keyId: string;
+  certStatus: 'FULL' | 'CONTINGENT' | 'PARTIAL' | 'INVALID';
+}
 
 // ---------------------------------------------------------------------------
 // Client-side canonicalise — must EXACTLY mirror crypto-signer.ts

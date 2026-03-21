@@ -11,7 +11,42 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import type { SignedTrustCertificate } from '../../../../packages/auth/src/crypto-signer';
+interface TrustAttributes {
+  studentId: string;
+  kycStatus: 'APPROVED' | 'PENDING' | 'REJECTED' | 'NEEDS_REVIEW';
+  nfcChipVerified: boolean;
+  livenessScore: number;
+  facialMatchScore: number;
+  visaType: string;
+  visaExpiryYear: number;
+  universityName: string;
+  programOfStudy: string;
+  solvencyVerified: boolean;
+  balanceTier: 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH';
+  guaranteeMonths: number;
+  monthlyRentTarget: number;
+  novaScore: number;
+  novaScoreTier: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'BUILDING';
+  checkrStatus: 'APPROVED' | 'PENDING' | 'REJECTED' | 'SKIPPED' | null;
+  compositeScore: number;
+  guaranteeTier: 'PLATINUM' | 'GOLD' | 'SILVER' | 'STANDARD' | 'INSUFFICIENT';
+  maxRentApproval: number;
+  depositMultiplier: number;
+}
+
+interface SignedTrustCertificate {
+  certId: string;
+  version: '1';
+  issuedAt: string;
+  expiresAt: string;
+  issuer: 'Vecta Financial Services LLC';
+  attributes: TrustAttributes;
+  canonicalHash: string;
+  signature: string;
+  publicKeyHex: string;
+  keyId: string;
+  certStatus: 'FULL' | 'CONTINGENT' | 'PARTIAL' | 'INVALID';
+}
 import { AcceptTenantButton } from '@/components/AcceptTenantButton';
 import { ProofBadge } from '@/components/ProofBadge';
 
