@@ -228,9 +228,9 @@ async function bootstrap() {
     }
   }
 
-  const port = parseInt(process.env.PORT ?? "4000", 10);
-  app.listen(port, "0.0.0.0", () => {
-    logger.info({ event: "SERVER_STARTED", port, env: process.env.NODE_ENV });
+  const PORT = Number(process.env.PORT) || 4000;
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
   });
 
   // Graceful shutdown
