@@ -22,10 +22,16 @@ This package’s `tsc` program includes `../../services/**/*.ts` and `../../pack
 
 `dist/apps/api-gateway/src/server.js`
 
-Set **Start Command** accordingly, e.g.:
+Set **Start Command** accordingly:
+
+- **Render root = monorepo `vecta/` folder** (matches `render.yaml` `rootDir: vecta`):
 
 ```bash
-node apps/api-gateway/dist/apps/api-gateway/src/server.js
+cd apps/api-gateway && node dist/apps/api-gateway/src/server.js
 ```
 
-(if your process runs from the `vecta` directory on Render).
+- **Render root = Git repo root** (parent of `vecta/`):
+
+```bash
+cd vecta/apps/api-gateway && node dist/apps/api-gateway/src/server.js
+```
