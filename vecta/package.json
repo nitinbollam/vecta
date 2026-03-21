@@ -1,0 +1,37 @@
+{
+  "name": "vecta",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vecta — Life-as-a-Service for F-1 International Students",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build":      "turbo run build --filter=!api-gateway",
+    "build:all":  "turbo run build",
+    "dev":        "turbo run dev",
+    "test":       "turbo run test",
+    "lint":       "turbo run lint",
+    "type-check": "turbo run type-check",
+    "clean":      "turbo run clean && rm -rf node_modules",
+    "db:migrate": "psql $DATABASE_URL -f packages/database/migrations/001_initial_schema.sql && psql $DATABASE_URL -f packages/database/migrations/002_plaid_connections.sql && psql $DATABASE_URL -f packages/database/migrations/003_compliance_trust.sql && psql $DATABASE_URL -f packages/database/migrations/004_compliance_network.sql",
+    "docker:up":  "docker compose up -d",
+    "docker:down":"docker compose down"
+  },
+  "devDependencies": {
+    "turbo":          "^2.4.0",
+    "typescript":     "^5.4.5",
+    "@types/node":    "^20.12.12",
+    "eslint":         "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.10.0",
+    "@typescript-eslint/parser":        "^7.10.0",
+    "prettier":       "^3.2.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@10.8.2"
+}

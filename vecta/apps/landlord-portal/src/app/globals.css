@@ -1,0 +1,281 @@
+/* apps/landlord-portal/src/app/globals.css
+   Vecta Brand System v2 — colors from official brand identity sheet */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Fonts: Bebas Neue (display) + DM Sans (body) ── */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&display=swap');
+
+/* ─────────────────────────────────────────────────────────
+   VECTA DESIGN TOKENS — source of truth for all pages
+   ───────────────────────────────────────────────────────── */
+:root {
+  /* Brand primaries (from logo color palette swatch) */
+  --v-navy-deep:    #001F3F;   /* darkest — hero backgrounds, footers */
+  --v-navy:         #001A33;   /* dark navy — card backs, headers */
+  --v-teal:         #00E6CC;   /* teal accent — CTAs, badges, icons */
+  --v-teal-dim:     #00B8A4;   /* muted teal — hover states */
+  --v-teal-glow:    rgba(0, 230, 204, 0.18);
+
+  /* Neutrals */
+  --v-light:        #F4F4F4;   /* light gray backgrounds */
+  --v-white:        #FFFFFF;
+  --v-text:         #001F3F;   /* body text on light bg */
+  --v-text-sec:     #3D5A6B;   /* secondary text */
+  --v-text-muted:   #7A9BAD;   /* captions, placeholders */
+  --v-border:       #D6E4EC;   /* card borders */
+  --v-border-dark:  #B0C8D5;
+
+  /* Semantic */
+  --v-success:      #00C896;
+  --v-success-bg:   #E6FBF7;
+  --v-warning:      #F59E0B;
+  --v-warning-bg:   #FFFBEB;
+  --v-error:        #EF4444;
+  --v-error-bg:     #FEF2F2;
+  --v-info:         #00E6CC;
+  --v-info-bg:      rgba(0, 230, 204, 0.08);
+
+  /* Glassmorphism surfaces */
+  --v-glass:        rgba(0, 31, 63, 0.55);
+  --v-glass-border: rgba(0, 230, 204, 0.15);
+  --v-glass-light:  rgba(255, 255, 255, 0.08);
+
+  /* Typography */
+  --font-display:   'Bebas Neue', 'Impact', 'Arial Narrow', sans-serif;
+  --font-body:      'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:      'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows */
+  --shadow-card:    0 4px 24px -4px rgba(0, 31, 63, 0.16);
+  --shadow-teal:    0 0 32px -4px rgba(0, 230, 204, 0.25);
+  --shadow-lg:      0 16px 48px -8px rgba(0, 31, 63, 0.28);
+}
+
+/* ── Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--v-light);
+  color: var(--v-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Brand gradient backgrounds ──────────────────────── */
+.bg-vecta-hero {
+  background: linear-gradient(135deg, var(--v-navy-deep) 0%, #003060 50%, #001A33 100%);
+}
+
+.bg-vecta-card-dark {
+  background: linear-gradient(135deg, var(--v-navy) 0%, #002244 100%);
+}
+
+/* Subtle geometric mesh overlay (applied via ::before pseudo) */
+.bg-vecta-mesh::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(60deg, rgba(0,230,204,0.04) 1px, transparent 1px),
+    linear-gradient(-60deg, rgba(0,230,204,0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0,230,204,0.02) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Typography ───────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+.font-body    { font-family: var(--font-body);    }
+.font-mono    { font-family: var(--font-mono);    }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-body);
+  font-weight: 700;
+  color: var(--v-text);
+}
+
+/* ── Vecta components ─────────────────────────────────── */
+.vecta-card {
+  background: var(--v-white);
+  border-radius: 1.25rem;
+  border: 1px solid var(--v-border);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.vecta-card-dark {
+  background: var(--v-navy);
+  border-radius: 1.25rem;
+  border: 1px solid var(--v-glass-border);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.vecta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vecta-badge-teal {
+  background: var(--v-teal-glow);
+  color: var(--v-teal);
+  border: 1px solid rgba(0, 230, 204, 0.25);
+}
+
+.vecta-badge-verified {
+  background: var(--v-success-bg);
+  color: var(--v-success);
+  border: 1px solid rgba(0, 200, 150, 0.25);
+}
+
+/* Teal CTA button */
+.btn-vecta-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--v-teal);
+  color: var(--v-navy-deep);
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  padding: 0.85rem 2rem;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  box-shadow: var(--shadow-teal);
+  text-decoration: none;
+}
+.btn-vecta-primary:hover {
+  background: var(--v-teal-dim);
+  transform: translateY(-1px);
+  box-shadow: 0 0 40px -4px rgba(0, 230, 204, 0.4);
+}
+.btn-vecta-primary:active {
+  transform: translateY(0);
+}
+
+/* Ghost button */
+.btn-vecta-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: transparent;
+  color: var(--v-teal);
+  font-weight: 700;
+  font-size: 0.875rem;
+  padding: 0.75rem 1.75rem;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(0, 230, 204, 0.4);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn-vecta-ghost:hover {
+  background: var(--v-teal-glow);
+  border-color: var(--v-teal);
+}
+
+/* ── Teal glow divider ────────────────────────────────── */
+.vecta-divider {
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(0, 230, 204, 0.4) 30%,
+    rgba(0, 230, 204, 0.6) 50%,
+    rgba(0, 230, 204, 0.4) 70%,
+    transparent 100%
+  );
+}
+
+/* ── Glass surfaces ───────────────────────────────────── */
+.vecta-glass {
+  background: rgba(0, 31, 63, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--v-glass-border);
+  border-radius: 1rem;
+}
+
+/* ── Teal text / accent ───────────────────────────────── */
+.text-vecta-teal     { color: var(--v-teal); }
+.text-vecta-navy     { color: var(--v-navy-deep); }
+.bg-vecta-teal       { background-color: var(--v-teal); }
+.border-vecta-teal   { border-color: var(--v-teal); }
+
+/* ── Vault field ──────────────────────────────────────── */
+.vault-field {
+  color: rgba(255,255,255,0.2);
+  font-style: italic;
+  user-select: none;
+  cursor: not-allowed;
+}
+
+/* ── Animations ───────────────────────────────────────── */
+@keyframes teal-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 230, 204, 0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(0, 230, 204, 0); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.animate-fade-up    { animation: fade-up 0.5s ease forwards; }
+.animate-teal-pulse { animation: teal-pulse 2s ease-in-out infinite; }
+
+/* ── Accessibility ────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--v-teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  padding: 8px 12px;
+  background: var(--v-teal);
+  color: var(--v-navy-deep);
+  font-weight: 700;
+  z-index: 9999;
+  border-radius: 0 0 4px 0;
+}
+.skip-link:focus { top: 0; }
+
+/* ── Print ────────────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: #001F3F; }
+  .print-break { page-break-before: always; }
+  .privacy-vault { display: none; }
+}

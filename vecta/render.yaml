@@ -1,0 +1,92 @@
+# Render Blueprint — Vecta backend (API Gateway + Compliance AI + data stores)
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: Dashboard → New → Blueprint → connect repo → apply this file.
+# After first deploy, set sync: false / dashboard secrets (JWT keys, ALLOWED_ORIGINS, COMPLIANCE_AI_URL, vendor APIs).
+#
+# pgvector: Render Postgres may not include pgvector. For roommate AI you may need Neon / Supabase / self-hosted PG — see docs/DEPLOY_VERCEL_RENDER.md
+
+version: "1"
+
+databases:
+  - name: vecta-db
+    databaseName: vecta_db
+    user: vecta
+    plan: basic-256mb
+    region: oregon
+
+services:
+  - type: keyvalue
+    name: vecta-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    name: vecta-api-gateway
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: .
+    buildCommand: yarn install && yarn turbo run build --filter=api-gateway...
+    startCommand: node apps/api-gateway/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vecta-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: vecta-redis
+          type: keyvalue
+          property: connectionString
+      # Set in dashboard after compliance-ai is live: https://<vecta-compliance-ai>.onrender.com
+      - key: COMPLIANCE_AI_URL
+        sync: false
+      # Comma-separated: https://your-app.vercel.app,https://yourdomain.com
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: VECTA_JWT_PRIVATE_KEY
+        sync: false
+      - key: VECTA_JWT_PUBLIC_KEY
+        sync: false
+      - key: VECTA_JWT_ISSUER
+        value: vecta.io
+      - key: VECTA_JWT_AUDIENCE
+        value: vecta-platform
+      - key: VECTA_FIELD_ENCRYPTION_KEY
+        sync: false
+      - key: VECTA_HMAC_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  - type: web
+    name: vecta-compliance-ai
+    env: python
+    region: oregon
+    plan: starter
+    rootDir: .
+    buildCommand: pip install -r apps/compliance-ai/requirements.txt
+    startCommand: cd apps/compliance-ai && uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vecta-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: vecta-redis
+          type: keyvalue
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

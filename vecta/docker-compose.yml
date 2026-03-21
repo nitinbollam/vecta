@@ -1,0 +1,266 @@
+version: "3.9"
+
+networks:
+  vecta-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+  # ─── Infrastructure ─────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vecta-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vecta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vecta_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-vecta_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vecta -d vecta_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vecta-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: vecta-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secret} --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vecta-network
+
+  # ─── Backend Services ────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ./apps/api-gateway
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-api-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+      COMPLIANCE_AI_URL: http://compliance-ai:8000
+      IDENTITY_SERVICE_URL: http://identity-service:4001
+      BANKING_SERVICE_URL: http://banking-service:4002
+      HOUSING_SERVICE_URL: http://housing-service:4003
+      MOBILITY_SERVICE_URL: http://mobility-service:4004
+      AUDIT_SERVICE_URL: http://audit-service:4005
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api-gateway:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  compliance-ai:
+    build:
+      context: ./apps/compliance-ai
+      dockerfile: Dockerfile
+    container_name: vecta-compliance-ai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ENV: development
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/compliance-ai:/app
+    networks:
+      - vecta-network
+
+  identity-service:
+    build:
+      context: ./services/identity-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-identity-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4001
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/identity-service:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  banking-service:
+    build:
+      context: ./services/banking-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-banking-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4002
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+    ports:
+      - "4002:4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/banking-service:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  housing-service:
+    build:
+      context: ./services/housing-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-housing-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4003
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+    ports:
+      - "4003:4003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/housing-service:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  mobility-service:
+    build:
+      context: ./services/mobility-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-mobility-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4004
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+    ports:
+      - "4004:4004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/mobility-service:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  audit-service:
+    build:
+      context: ./services/audit-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-audit-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      PORT: 4005
+      DATABASE_URL: postgresql://vecta:vecta_secret@postgres:5432/vecta_db
+      REDIS_URL: redis://:redis_secret@redis:6379
+    ports:
+      - "4005:4005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/audit-service:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  # ─── Frontends ───────────────────────────────────────────────────────────────
+  student-app:
+    build:
+      context: ./apps/student-app
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-student-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      EXPO_PUBLIC_API_URL: http://localhost:4000
+      EXPO_PUBLIC_ENV: development
+    ports:
+      - "8081:8081" # Expo bundler
+      - "19000:19000" # Expo Go
+      - "19001:19001" # Expo Go tunnel
+    volumes:
+      - ./apps/student-app:/app
+      - /app/node_modules
+    networks:
+      - vecta-network
+
+  landlord-portal:
+    build:
+      context: ./apps/landlord-portal
+      dockerfile: Dockerfile
+      target: development
+    container_name: vecta-landlord-portal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/landlord-portal:/app
+      - /app/node_modules
+    networks:
+      - vecta-network

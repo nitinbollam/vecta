@@ -1,0 +1,20 @@
+{
+  "name": "@vecta/storage",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vecta/logger": "*",
+    "@aws-sdk/client-s3": "^3.590.0",
+    "@aws-sdk/s3-request-presigner": "^3.590.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

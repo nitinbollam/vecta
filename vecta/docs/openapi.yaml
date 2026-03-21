@@ -1,0 +1,470 @@
+openapi: 3.1.0
+
+info:
+  title: Vecta Platform API
+  version: 1.0.0
+  description: |
+    Life-as-a-Service for F-1 international students.
+    
+    **Authentication:** All `/api/v1/*` endpoints (except webhooks) require
+    `Authorization: Bearer <VectaIDToken>` (RS256 JWT).
+    
+    **F-1 Compliance:** `POST /api/v1/mobility/rides/accept` and
+    `POST /api/v1/mobility/driver/go-online` always return `403 F1_VISA_COMPLIANCE_VIOLATION`
+    regardless of token — these routes are architectural dead ends.
+  contact:
+    email: api@vecta.io
+  license:
+    name: Proprietary
+    url: https://vecta.io/terms
+
+servers:
+  - url: https://api.vecta.io
+    description: Production
+  - url: https://api.staging.vecta.io
+    description: Staging
+  - url: http://localhost:4000
+    description: Local development
+
+# ---------------------------------------------------------------------------
+# Security schemes
+# ---------------------------------------------------------------------------
+
+components:
+  securitySchemes:
+    VectaIDToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 JWT issued by Vecta identity service. Contains zero PII.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:   { type: string, example: INVALID_TOKEN }
+        message: { type: string }
+
+    VectaIDStatus:
+      type: string
+      enum: [UNVERIFIED, PENDING, VERIFIED, EXPIRED]
+
+    KYCStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED, MANUAL_REVIEW]
+
+    StudentRole:
+      type: string
+      enum: [STUDENT, LESSOR]
+
+    GuaranteeTier:
+      type: string
+      enum: [PLATINUM, GOLD, SILVER, STANDARD, INSUFFICIENT]
+
+    TrustScoreResponse:
+      type: object
+      properties:
+        novaScore:         { type: integer, minimum: 300, maximum: 850 }
+        novaTier:          { type: string, enum: [Building, Fair, Good, Excellent] }
+        compositeScore:    { type: integer, minimum: 0, maximum: 1000 }
+        guaranteeTier:     { $ref: '#/components/schemas/GuaranteeTier' }
+        maxRentApproval:   { type: number, description: Max monthly rent in USD }
+        depositMultiplier: { type: number, enum: [1.0, 1.5, 2.0, 2.5] }
+        guaranteeMonths:   { type: integer }
+        breakdown:
+          type: object
+          properties:
+            novaExplanation:      { type: string }
+            liquidityExplanation: { type: string }
+            visaExplanation:      { type: string }
+            identityExplanation:  { type: string }
+
+    LetterOfCredit:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        status:          { type: string, enum: [pending, active, expired] }
+        monthlyRent:     { type: number }
+        guaranteeMonths: { type: integer }
+        expiresAt:       { type: string, format: date-time }
+        downloadUrl:     { type: string, format: uri, description: 60-min signed S3 URL }
+
+    MaskedBalance:
+      type: object
+      description: Balance shown as a range — exact figure never exposed
+      properties:
+        tier:        { type: string, enum: [LOW, MEDIUM, HIGH, VERY_HIGH] }
+        rangeLabel:  { type: string, example: '$10,000 – $25,000' }
+        lastUpdated: { type: string, format: date-time }
+
+    TokenRecord:
+      type: object
+      properties:
+        jti:       { type: string, description: Masked JTI (first 8 chars + …) }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        used:      { type: boolean }
+        usedAt:    { type: string, format: date-time, nullable: true }
+
+    EarningsSummary:
+      type: object
+      properties:
+        taxYear:           { type: integer }
+        ytdRentalIncome:   { type: number, description: USD }
+        rideCount:         { type: integer }
+        activeSince:       { type: string, format: date-time, nullable: true }
+        taxClassification: { type: string, example: 'Schedule E — Passive Rental Income' }
+        form1099Type:      { type: string, example: '1099-MISC Box 1: Rents' }
+
+    F1ComplianceViolation:
+      type: object
+      properties:
+        error:            { type: string, enum: [F1_VISA_COMPLIANCE_VIOLATION] }
+        message:          { type: string }
+        code:             { type: string, enum: [LESSOR_CANNOT_DRIVE] }
+        learnMoreUrl:     { type: string, format: uri }
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+paths:
+  # --- Identity ---
+
+  /api/v1/identity/verify/initiate:
+    post:
+      summary: Initiate Didit NFC passport scan session
+      security: [{ VectaIDToken: [] }]
+      tags: [Identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId]
+              properties:
+                studentId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId: { type: string }
+                  sdkToken:  { type: string }
+                  qrCodeUrl: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+
+  /api/v1/identity/token/mint:
+    post:
+      summary: Mint a Vecta ID token (post-KYC)
+      security: [{ VectaIDToken: [] }]
+      tags: [Identity]
+      responses:
+        '201':
+          description: Token minted and registered for single-use
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: RS256 JWT }
+        '403':
+          description: KYC not approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/v1/identity/token/verify:
+    post:
+      summary: Verify a Vecta ID token (landlord use — single-use consumption)
+      tags: [Identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:             { type: string }
+                landlordIp:        { type: string }
+                landlordUserAgent: { type: string }
+                landlordEmail:     { type: string, format: email }
+      responses:
+        '200':
+          description: Token valid and consumed. Tiered view returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  view: { type: object, description: Tiered student view }
+                  tier: { type: string, enum: [ANONYMOUS, VERIFIED, TRUSTED] }
+        '401':
+          description: Token expired or invalid
+        '409':
+          description: Token already used (single-use enforcement)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:     { type: string, enum: [TOKEN_ALREADY_USED] }
+                  usedAt:    { type: string, format: date-time }
+                  usedByIp:  { type: string }
+
+  /api/v1/identity/tokens:
+    get:
+      summary: List active sharing tokens for the authenticated student
+      security: [{ VectaIDToken: [] }]
+      tags: [Identity]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items: { $ref: '#/components/schemas/TokenRecord' }
+
+  /api/v1/identity/tokens/{jti}/revoke:
+    delete:
+      summary: Revoke a sharing token (student withdraws consent)
+      security: [{ VectaIDToken: [] }]
+      tags: [Identity]
+      parameters:
+        - name: jti
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: boolean }
+        '404':
+          description: Token not found or already used
+
+  /api/v1/identity/banking/balance:
+    get:
+      summary: Get masked balance range (never exact balance)
+      security: [{ VectaIDToken: [] }]
+      tags: [Banking]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaskedBalance' }
+
+  # --- Housing ---
+
+  /api/v1/housing/trust-score:
+    get:
+      summary: Get composite Vecta trust score
+      security: [{ VectaIDToken: [] }]
+      tags: [Housing]
+      parameters:
+        - name: monthlyRent
+          in: query
+          schema: { type: number, default: 1500 }
+        - name: leaseDuration
+          in: query
+          schema: { type: integer, default: 12 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrustScoreResponse' }
+
+  /api/v1/housing/loc/generate:
+    post:
+      summary: Generate Letter of Credit PDF
+      security: [{ VectaIDToken: [] }]
+      tags: [Housing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monthlyRent]
+              properties:
+                monthlyRent:     { type: number, minimum: 100, maximum: 50000 }
+                landlordName:    { type: string }
+                propertyAddress: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LetterOfCredit' }
+        '422':
+          description: Bank not connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:  { type: string, enum: [BANK_NOT_CONNECTED] }
+                  action: { type: string, enum: [CONNECT_BANK] }
+
+  # --- Mobility (F-1 compliance enforced) ---
+
+  /api/v1/mobility/earnings:
+    get:
+      summary: YTD Schedule E earnings summary
+      security: [{ VectaIDToken: [] }]
+      tags: [Mobility]
+      parameters:
+        - name: year
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EarningsSummary' }
+
+  /api/v1/mobility/rides/accept:
+    post:
+      summary: '[DEAD END] Accept a ride — always returns 403 for F-1 compliance'
+      tags: [Mobility]
+      responses:
+        '403':
+          description: F-1 visa compliance violation — LESSOR cannot accept rides
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/F1ComplianceViolation' }
+
+  /api/v1/mobility/driver/go-online:
+    post:
+      summary: '[DEAD END] Go online as driver — always returns 403 for F-1 compliance'
+      tags: [Mobility]
+      responses:
+        '403':
+          description: F-1 visa compliance violation — LESSOR cannot go online as driver
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/F1ComplianceViolation' }
+
+  /api/v1/mobility/audit/chain:
+    get:
+      summary: Export immutable flight recorder audit chain (USCIS/IRS)
+      security: [{ VectaIDToken: [] }]
+      tags: [Mobility]
+      parameters:
+        - name: year
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chainIntegrity: { type: string, enum: [VERIFIED, BROKEN] }
+                  entries:        { type: array, items: { type: object } }
+                  exportedAt:     { type: string, format: date-time }
+
+  # --- Landlord ---
+
+  /api/v1/landlord/register:
+    post:
+      summary: Register landlord account + send magic link
+      tags: [Landlord]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:       { type: string, format: email }
+                fullName:    { type: string }
+                companyName: { type: string }
+      responses:
+        '201':
+          description: Always 201 (email enumeration prevention)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+
+  /api/v1/landlord/verify-email:
+    post:
+      summary: Verify landlord email via magic link token
+      tags: [Landlord]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:   { type: boolean }
+                  tier: { type: string, enum: [VERIFIED, TRUSTED] }
+        '401':
+          description: Token invalid, expired, or already used
+
+  # --- Webhooks (public routes — HMAC verified) ---
+
+  /webhooks/didit:
+    post:
+      summary: Didit NFC verification webhook
+      tags: [Webhooks]
+      security: []
+      responses:
+        '200': { description: Accepted }
+        '401': { description: HMAC verification failed }
+
+  /webhooks/unit:
+    post:
+      summary: Unit.co KYC status webhook
+      tags: [Webhooks]
+      security: []
+      responses:
+        '200': { description: Accepted }
+
+  /webhooks/checkr:
+    post:
+      summary: Checkr background check completion webhook
+      tags: [Webhooks]
+      security: []
+      responses:
+        '200': { description: Accepted }
+
+tags:
+  - name: Identity
+    description: Passport verification, KYC, Vecta ID tokens
+  - name: Banking
+    description: Unit.co DDA, Plaid solvency
+  - name: Housing
+    description: Trust score, Letter of Credit, roommate matching
+  - name: Mobility
+    description: Fleet enrollment, flight recorder, Schedule E compliance
+  - name: Landlord
+    description: Landlord registration and tier management
+  - name: Webhooks
+    description: Provider webhook receivers (HMAC verified)
