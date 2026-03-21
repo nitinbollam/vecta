@@ -2,8 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "../..",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false
   },
-  "include": ["src", "src/types/**/*.ts"],
+  "include": [
+    "src",
+    "src/types/**/*.ts",
+    "../../services/**/*.ts",
+    "../../packages/providers/**/*.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

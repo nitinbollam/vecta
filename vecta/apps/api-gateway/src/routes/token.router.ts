@@ -48,7 +48,8 @@ router.delete(
     try {
       const studentId = req.vectaUser!.sub;
       // Unmask JTI — stored as "abc123de…", real JTI looked up by prefix
-      const jtiPrefix = req.params.jti.replace('…', '');
+      const { jti } = z.object({ jti: z.string().min(1) }).parse(req.params);
+      const jtiPrefix = jti.replace('…', '');
 
       // Find full JTI by prefix + student ownership
       const row = await queryOne<{ jti: string }>(

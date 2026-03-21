@@ -61,13 +61,13 @@ router.post('/vehicle/enroll', async (req: Request, res: Response) => {
       vehicleYear:       body.vehicleYear,
       vehicleMake:       body.vehicleMake,
       vehicleModel:      body.vehicleModel,
-      consentStrictlyPassive:    body.consentStrictlyPassive,
-      consentScheduleE:          body.consentScheduleE,
-      consentFlightRecorder:     body.consentFlightRecorder,
-      consentIndependentCounsel: body.consentIndependentCounsel,
-      consentVersion:    body.consentVersion,
-      ipAddress,
-      userAgent,
+      strictlyPassiveAcknowledged: body.consentStrictlyPassive,
+      taxClassificationAcknowledged: body.consentScheduleE,
+      flightRecorderConsentAcknowledged: body.consentFlightRecorder,
+      independentCounselWaiverAcknowledged: body.consentIndependentCounsel,
+      tosVersion: body.consentVersion,
+      consentIpAddress: ipAddress,
+      consentUserAgent: userAgent,
     });
 
     logComplianceEvent('VEHICLE_ENROLLED', studentId, {
@@ -77,8 +77,7 @@ router.post('/vehicle/enroll', async (req: Request, res: Response) => {
 
     res.status(201).json({
       leaseId: result.leaseId,
-      consentSignature: result.consentSignature,
-      activatedAt: result.activatedAt,
+      leaseActive: result.leaseActive,
       message: 'Vehicle enrolled. Your role has been updated to LESSOR.',
     });
   } catch (err) {
@@ -179,16 +178,16 @@ router.get(
         10,
       );
 
-      const chain = await flightRecorderService.exportAuditChain(studentId, taxYear);
+      const chain = await flightRecorderService.exportAuditChain({ lessorStudentId: studentId, taxYear });
 
-      logComplianceEvent('AUDIT_CHAIN_EXPORTED', studentId, { taxYear, entries: chain.length });
+      logComplianceEvent('AUDIT_CHAIN_EXPORTED', studentId, { taxYear, entries: chain.records.length });
 
       res.json({
         studentId,
         taxYear,
         exportedAt: new Date().toISOString(),
         chainIntegrity: 'VERIFIED',
-        entries: chain,
+        entries: chain.records,
       });
     } catch (err) {
       logger.error({ err }, 'Audit chain export failed');
@@ -218,11 +217,7 @@ router.post('/dso-memo/generate', async (req: Request, res: Response) => {
       })
       .parse(req.body);
 
-    const memo = await dsoComplianceMemoService.generateMemo(
-      studentId,
-      dsoName,
-      universityName,
-    );
+    const memo = await dsoComplianceMemoService.generateMemo(studentId);
 
     res.status(201).json(memo);
   } catch (err) {

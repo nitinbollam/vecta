@@ -12,15 +12,20 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { solvencyService } from '../../../../services/banking-service/src/plaid.service';
+import { SolvencyService } from '../../../../services/banking-service/src/plaid.service';
 import { novaCreditService } from '../../../../services/housing-service/src/connectivity-nova.service';
 import { authMiddleware, requireKYC } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
-import { query, queryOne } from '@vecta/database';
+import { getPool, query, queryOne } from '@vecta/database';
 import { getSignedDownloadUrl } from '@vecta/storage';
+import Redis from 'ioredis';
 
 const logger = createLogger('housing-router');
 const router = Router();
+const solvencyService = new SolvencyService(
+  getPool(),
+  new Redis(process.env.REDIS_URL ?? 'redis://:redis_secret@localhost:6379'),
+);
 
 // All housing routes require authentication and KYC
 router.use(authMiddleware);
@@ -76,12 +81,22 @@ router.post('/loc/generate', async (req: Request, res: Response) => {
       })
       .parse(req.body);
 
-    const result = await solvencyService.generateLetterOfCredit(
-      studentId,
-      monthlyRent,
-      landlordName,
-      propertyAddress,
+    const student = await queryOne<{ full_name: string; university_name: string | null }>(
+      'SELECT full_name, university_name FROM students WHERE id = $1',
+      [studentId],
     );
+    if (!student) {
+      res.status(404).json({ error: 'STUDENT_NOT_FOUND' });
+      return;
+    }
+
+    const result = await solvencyService.generateLetterOfCredit({
+      studentId,
+      monthlyRentEstimateUSD: monthlyRent,
+      studentFullName: student.full_name,
+      universityName: student.university_name ?? 'Unknown University',
+      landlordName,
+    });
 
     res.status(201).json(result);
   } catch (err) {
@@ -158,11 +173,24 @@ router.get('/trust-score', async (req: Request, res: Response) => {
 
     if (!row.trust_score) {
       // Trigger Nova Credit pull if not yet fetched
-      const result = await novaCreditService.fetchInternationalCreditHistory(studentId);
+      await novaCreditService.fetchInternationalCreditHistory(studentId);
+      const refreshed = await queryOne<{
+        trust_score: number;
+        trust_tier: string;
+      }>(
+        `SELECT trust_score, trust_tier
+         FROM students
+         WHERE id = $1`,
+        [studentId],
+      );
+      if (!refreshed?.trust_score) {
+        res.status(502).json({ error: 'NOVA_FETCH_INCOMPLETE' });
+        return;
+      }
       res.json({
-        score: result.translatedScore,
-        tier: result.tier,
-        source: result.sourceCountry,
+        score: refreshed.trust_score,
+        tier: refreshed.trust_tier,
+        source: 'INTL',
         freshlyFetched: true,
       });
       return;

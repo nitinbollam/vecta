@@ -22,7 +22,6 @@ import { query, queryOne } from '@vecta/database';
 import {
   getOpenCases,
   resolveCase,
-  evaluatePolicies,
   type CaseType,
   type CasePriority,
 } from '../../../../services/compliance-service/src/compliance-ops.service';
@@ -74,7 +73,7 @@ router.get('/compliance/cases', officerAuth, async (req: Request, res: Response)
 
 router.post('/compliance/cases/:id/resolve', officerAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const { decision, rationale, officerEmail } = z.object({
       decision:     z.enum(['RESOLVED_PASS', 'RESOLVED_FAIL', 'ESCALATED']),
       rationale:    z.string().min(10).max(2000),
@@ -166,7 +165,7 @@ router.get('/landlord/social-proof', async (req: Request, res: Response) => {
 
 router.get('/landlord/comparable/:zip', async (req: Request, res: Response) => {
   try {
-    const zip  = req.params.zip;
+    const { zip } = z.object({ zip: z.string().min(3).max(10) }).parse(req.params);
     const tier = (req.query.tier as string) ?? 'STANDARD';
     const report = await getComparableReport(zip, tier);
     res.json(report);

@@ -316,7 +316,7 @@ router.get('/certificate/:token', async (req: Request, res: Response) => {
       };
 
       // 3g. Sign certificate
-      const cert = signCertificate(attrs);
+      const cert = await signCertificate(attrs);
 
       // 3h. Persist certificate record (for audit + re-download)
       await client.query(
@@ -421,6 +421,7 @@ router.post('/certificate/verify', async (req: Request, res: Response) => {
       signature:     z.string().regex(/^[0-9a-f]{128}$/),
       publicKeyHex:  z.string().min(60),
       certStatus:    z.enum(['FULL', 'CONTINGENT', 'PARTIAL', 'INVALID']),
+      keyId:         z.string().optional(),
     }),
   }).safeParse(req.body);
 
@@ -429,7 +430,11 @@ router.post('/certificate/verify', async (req: Request, res: Response) => {
     return;
   }
 
-  const cert = body.data.certificate as SignedTrustCertificate;
+  const cert = {
+    ...body.data.certificate,
+    issuer: 'Vecta Financial Services LLC',
+    keyId: body.data.certificate.keyId ?? 'vecta-cert-v1',
+  } as unknown as SignedTrustCertificate;
   const result = verifyCertificate(cert);
 
   if (!result.valid) {
@@ -473,7 +478,7 @@ router.post('/certificate/:certId/accept', async (req: Request, res: Response) =
     return;
   }
 
-  const { certId } = req.params;
+  const { certId } = z.object({ certId: z.string().uuid() }).parse(req.params);
 
   // Verify certificate exists and is valid
   const certRow = await queryOne<{

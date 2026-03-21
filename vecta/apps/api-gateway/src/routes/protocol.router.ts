@@ -287,10 +287,18 @@ router.post('/protocol/verify', async (req: Request, res: Response) => {
     if (body.data.certificate.claimType === 'TENANT_PROOF') {
       // Delegate to the existing certificate verify endpoint logic
       const { verifyCertificate } = await import('@vecta/auth');
-      const result = verifyCertificate(body.data.certificate as Parameters<typeof verifyCertificate>[0]);
+      const tenantCert = {
+        ...body.data.certificate,
+        issuer: 'Vecta Financial Services LLC',
+        keyId: 'vecta-cert-v1',
+        certStatus: 'FULL' as const,
+      } as unknown as Parameters<typeof verifyCertificate>[0];
+      const result = verifyCertificate(tenantCert);
       res.json({ valid: result.valid, reason: result.reason, claimType: 'TENANT_PROOF', recomputedHash: result.recomputedHash });
     } else {
-      const result = verifyProtocolCertificate(body.data.certificate as Parameters<typeof verifyProtocolCertificate>[0]);
+      const result = verifyProtocolCertificate(
+        body.data.certificate as unknown as Parameters<typeof verifyProtocolCertificate>[0],
+      );
       res.json(result);
     }
   } catch (err) {

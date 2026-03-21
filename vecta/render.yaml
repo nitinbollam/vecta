@@ -28,7 +28,7 @@ services:
     env: node
     region: oregon
     plan: starter
-    rootDir: .
+    rootDir: vecta
     buildCommand: yarn install && yarn turbo run build --filter=api-gateway...
     startCommand: node apps/api-gateway/dist/server.js
     healthCheckPath: /health
@@ -72,7 +72,7 @@ services:
     env: python
     region: oregon
     plan: starter
-    rootDir: .
+    rootDir: vecta
     buildCommand: pip install -r apps/compliance-ai/requirements.txt
     startCommand: cd apps/compliance-ai && uvicorn src.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health

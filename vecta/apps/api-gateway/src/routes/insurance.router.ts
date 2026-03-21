@@ -161,22 +161,24 @@ router.post('/insurance/health-plan/analyze', async (req: Request, res: Response
     }
 
     const studentId = req.vectaUser!.sub;
+    const passHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (!['content-type', 'content-length'].includes(k)) continue;
+      if (typeof v === 'string') passHeaders[k] = v;
+      if (Array.isArray(v) && v.length > 0) passHeaders[k] = v[0]!;
+    }
+    passHeaders['x-student-id'] = studentId;
 
-    // Rebuild fetch with same headers + studentId appended
-    const upstreamRes = await fetch(`${COMPLIANCE_AI}/insurance/analyze-university-plan`, {
-      method: 'POST',
-      headers: {
-        ...Object.fromEntries(
-          Object.entries(req.headers).filter(([k]) =>
-            ['content-type', 'content-length'].includes(k),
-          ),
-        ),
-      },
-      // Pipe raw body stream
-      body: req as unknown as BodyInit,
-      // @ts-expect-error — Node fetch duplex
-      duplex: 'half',
-    });
+    // Rebuild fetch with same headers and raw stream body
+    const upstreamRes = await fetch(
+      `${COMPLIANCE_AI}/insurance/analyze-university-plan`,
+      {
+        method: 'POST',
+        headers: passHeaders,
+        body: req as unknown as ReadableStream,
+        duplex: 'half' as 'half',
+      } as unknown as RequestInit,
+    );
 
     const data = await upstreamRes.json();
     res.status(upstreamRes.status).json(data);

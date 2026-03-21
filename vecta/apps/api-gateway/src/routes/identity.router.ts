@@ -36,9 +36,7 @@ router.post('/verify/initiate', authMiddleware, async (req: Request, res: Respon
 
     res.status(201).json({
       sessionId: session.sessionId,
-      sdkToken:  session.sdkToken,
-      qrCodeUrl: session.qrCodeUrl,
-      expiresAt: session.expiresAt,
+      verificationUrl: session.verificationUrl,
     });
   } catch (err) {
     logger.error({ err }, 'Failed to initiate Didit session');
@@ -52,7 +50,7 @@ router.post('/verify/initiate', authMiddleware, async (req: Request, res: Respon
 
 router.get('/verify/:sessionId', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { sessionId } = req.params;
+    const { sessionId } = z.object({ sessionId: z.string() }).parse(req.params);
     const row = await identityService.getSessionStatus(sessionId);
 
     if (!row) {
@@ -104,7 +102,11 @@ router.post('/token/verify', async (req: Request, res: Response) => {
       })
       .parse(req.body);
 
-    const view = await verifyVectaIDToken(token, landlordIp, landlordUserAgent);
+    const view = await verifyVectaIDToken(
+      token,
+      landlordIp ?? req.ip ?? 'unknown',
+      landlordUserAgent ?? req.headers['user-agent'] ?? 'unknown',
+    );
 
     if (!view) {
       res.status(404).json({ error: 'STUDENT_NOT_FOUND' });
@@ -133,7 +135,7 @@ router.post(
   async (req: Request, res: Response) => {
     try {
       const studentId = req.vectaUser!.sub;
-      const result = await baasService.provisionStudentAccount(studentId);
+      const result = await baasService.provisionStudentAccountByStudentId(studentId);
       res.status(201).json({
         accountProvisioned: true,
         kycStatus: result.kycStatus,
@@ -187,7 +189,11 @@ router.post('/webhooks/didit', async (req: Request, res: Response) => {
   }
 
   try {
-    await identityService.processVerificationResult(req.body);
+    await identityService.processVerificationResult(
+      String(req.body?.sessionId ?? ''),
+      rawBody,
+      signature,
+    );
     res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Didit webhook processing failed');
@@ -217,7 +223,7 @@ router.post('/webhooks/unit', async (req: Request, res: Response) => {
   }
 
   try {
-    await baasService.handleKYCStatusUpdate(req.body);
+    await baasService.handleKYCStatusUpdateFromWebhook(req.body);
     res.status(200).json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Unit webhook processing failed');

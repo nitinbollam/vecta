@@ -47,7 +47,7 @@ router.post(
       }
 
       const { initiateBackgroundCheck } = await import(
-        '../../../../services/identity-service/src/checkr.service',
+        '../../../../services/identity-service/src/checkr.service'
       );
       const result = await initiateBackgroundCheck(landlord.id);
 
@@ -88,7 +88,7 @@ router.get(
       }
 
       const { getBackgroundCheckStatus } = await import(
-        '../../../../services/identity-service/src/checkr.service',
+        '../../../../services/identity-service/src/checkr.service'
       );
       const status = await getBackgroundCheckStatus(landlord.id);
 
@@ -121,7 +121,7 @@ router.post('/webhooks/checkr', async (req: Request, res: Response) => {
 
   try {
     const { handleCheckrWebhook } = await import(
-      '../../../../services/identity-service/src/checkr.service',
+      '../../../../services/identity-service/src/checkr.service'
     );
     await handleCheckrWebhook(req.body);
     res.json({ received: true });

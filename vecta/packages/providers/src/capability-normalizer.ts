@@ -180,7 +180,7 @@ export function computeCapabilityDelta(
     banking:  BANKING_CAPABILITIES,
     identity: IDENTITY_CAPABILITIES,
     bankData: BANK_DATA_CAPABILITIES,
-  }[providerType] as Record<string, Record<string, unknown>>;
+  }[providerType] as unknown as Record<string, Record<string, unknown>>;
 
   const primary  = registry[primaryName];
   const fallback = registry[fallbackName];
@@ -231,7 +231,7 @@ export function computeCapabilityDelta(
 
   // Derive required adaptations
   if (providerType === 'banking') {
-    const fb = fallback as BankingCapabilities;
+    const fb = fallback as unknown as BankingCapabilities;
     if (!fb.routingNumberImmediate) {
       adaptations.push('Delay routing number display until KYC approved');
     }
@@ -244,7 +244,7 @@ export function computeCapabilityDelta(
   }
 
   if (providerType === 'identity') {
-    const fb = fallback as IdentityCapabilities;
+    const fb = fallback as unknown as IdentityCapabilities;
     if (!fb.nfcPassportSupport) {
       adaptations.push('Disable NFC_CHIP_VERIFIED flag in certificates — Persona uses OCR only');
       adaptations.push('Update biometric thresholds for OCR-based confidence scores');
@@ -361,7 +361,7 @@ export function assertCapability(
     return; // Allow — unknown provider treated as capable
   }
 
-  const value = (caps as Record<string, unknown>)[capability];
+  const value = (caps as unknown as Record<string, unknown>)[capability];
 
   if (value === false || value === 0 || value === null) {
     logComplianceEvent('CAPABILITY_MISMATCH', 'system', {
