@@ -9,31 +9,42 @@
 import crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
-// Key bootstrap
+// Key bootstrap (lazy — allows API process to start without env until encrypt/HMAC runs)
 // ---------------------------------------------------------------------------
-
-const RAW_KEY = process.env.VECTA_FIELD_ENCRYPTION_KEY;
-if (!RAW_KEY || RAW_KEY.length < 32) {
-  throw new Error(
-    '[vecta/crypto] VECTA_FIELD_ENCRYPTION_KEY must be set and ≥ 32 chars',
-  );
-}
 
 const SALT = Buffer.from(
   process.env.VECTA_ENCRYPTION_SALT ?? 'vecta-pii-salt-v1',
   'utf8',
 );
 
-/** Derived 256-bit key — computed once at module load. */
-const MASTER_KEY: Buffer = crypto.pbkdf2Sync(
-  RAW_KEY,
-  SALT,
-  600_000,
-  32,
-  'sha512',
-);
+function rawFieldKeyOrThrow(): string {
+  const k = process.env.VECTA_FIELD_ENCRYPTION_KEY;
+  if (!k || k.length < 32) {
+    throw new Error(
+      '[vecta/crypto] VECTA_FIELD_ENCRYPTION_KEY must be set and ≥ 32 chars',
+    );
+  }
+  return k;
+}
 
-const HMAC_SECRET = process.env.VECTA_HMAC_SECRET ?? RAW_KEY;
+let _masterKey: Buffer | null = null;
+
+function masterKey(): Buffer {
+  if (!_masterKey) {
+    _masterKey = crypto.pbkdf2Sync(
+      rawFieldKeyOrThrow(),
+      SALT,
+      600_000,
+      32,
+      'sha512',
+    );
+  }
+  return _masterKey;
+}
+
+function hmacSecret(): string {
+  return process.env.VECTA_HMAC_SECRET ?? rawFieldKeyOrThrow();
+}
 
 // ---------------------------------------------------------------------------
 // Core encrypt / decrypt
@@ -45,7 +56,7 @@ const HMAC_SECRET = process.env.VECTA_HMAC_SECRET ?? RAW_KEY;
  */
 export function encryptField(plaintext: string): string {
   const iv = crypto.randomBytes(12); // 96-bit IV — GCM standard
-  const cipher = crypto.createCipheriv('aes-256-gcm', MASTER_KEY, iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', masterKey(), iv);
 
   const encrypted = Buffer.concat([
     cipher.update(plaintext, 'utf8'),
@@ -76,7 +87,7 @@ export function decryptField(token: string): string {
   const authTag = Buffer.from(tagB64, 'base64url');
   const ciphertext = Buffer.from(ciphertextB64, 'base64url');
 
-  const decipher = crypto.createDecipheriv('aes-256-gcm', MASTER_KEY, iv);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey(), iv);
   decipher.setAuthTag(authTag);
 
   try {
@@ -99,7 +110,7 @@ export function decryptField(token: string): string {
  */
 export function hmacSign(payload: string, secret?: string): string {
   return crypto
-    .createHmac('sha256', secret ?? HMAC_SECRET)
+    .createHmac('sha256', secret ?? hmacSecret())
     .update(payload)
     .digest('hex');
 }
@@ -163,5 +174,5 @@ export function signConsentPayload(payload: ConsentPayload): string {
       Object.entries(payload.clauses).sort(([a], [b]) => a.localeCompare(b)),
     ),
   });
-  return sha256Hex(canonical + HMAC_SECRET);
+  return sha256Hex(canonical + hmacSecret());
 }

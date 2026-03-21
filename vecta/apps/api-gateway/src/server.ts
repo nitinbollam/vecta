@@ -180,16 +180,53 @@ app.use(errorHandler);
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-async function bootstrap() {
-  await redis.connect().catch((err) => {
-    logger.error({ event: "REDIS_CONNECT_ERROR", error: err.message });
-    process.exit(1);
-  });
+const STARTUP_ATTEMPTS = 8;
+const STARTUP_DELAY_MS = 3000;
 
-  await db.query("SELECT NOW()").catch((err) => {
-    logger.error({ event: "DB_CONNECT_ERROR", error: err.message });
-    process.exit(1);
-  });
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function bootstrap() {
+  let lastRedisErr: string | undefined;
+  for (let i = 0; i < STARTUP_ATTEMPTS; i++) {
+    try {
+      await redis.connect();
+      lastRedisErr = undefined;
+      break;
+    } catch (err) {
+      lastRedisErr = (err as Error).message;
+      logger.warn(
+        { event: "REDIS_CONNECT_RETRY", attempt: i + 1, error: lastRedisErr },
+        "Redis connect failed, retrying",
+      );
+      if (i === STARTUP_ATTEMPTS - 1) {
+        logger.error({ event: "REDIS_CONNECT_ERROR", error: lastRedisErr });
+        process.exit(1);
+      }
+      await sleep(STARTUP_DELAY_MS);
+    }
+  }
+
+  let lastDbErr: string | undefined;
+  for (let i = 0; i < STARTUP_ATTEMPTS; i++) {
+    try {
+      await db.query("SELECT NOW()");
+      lastDbErr = undefined;
+      break;
+    } catch (err) {
+      lastDbErr = (err as Error).message;
+      logger.warn(
+        { event: "DB_CONNECT_RETRY", attempt: i + 1, error: lastDbErr },
+        "Database connect failed, retrying",
+      );
+      if (i === STARTUP_ATTEMPTS - 1) {
+        logger.error({ event: "DB_CONNECT_ERROR", error: lastDbErr });
+        process.exit(1);
+      }
+      await sleep(STARTUP_DELAY_MS);
+    }
+  }
 
   const port = parseInt(process.env.PORT ?? "4000", 10);
   app.listen(port, "0.0.0.0", () => {

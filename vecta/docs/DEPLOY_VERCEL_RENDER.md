@@ -24,6 +24,18 @@ For **PostgreSQL with pgvector** (roommate embeddings, compliance-ai), [Supabase
    - **vecta-api-gateway** (Node)
    - **vecta-compliance-ai** (Python / FastAPI)
 
+If you create the **Node web service manually** (not from blueprint), set:
+
+| Field | Value |
+|--------|--------|
+| **Root Directory** | `vecta` |
+| **Build Command** | `npm ci --include=dev && npx turbo run build --filter=api-gateway...` |
+| **Start Command** | `cd apps/api-gateway && node dist/server.js` |
+
+Do **not** use `cd vecta/apps/...` when Root Directory is already `vecta` (that doubles the path).
+
+**Minimum env vars for the process to stay up:** `DATABASE_URL`, `REDIS_URL` (from linked Postgres + Redis). Set `VECTA_FIELD_ENCRYPTION_KEY` (≥32 chars) and `VECTA_HMAC_SECRET` before any route that encrypts or signs. Set `VECTA_JWT_PUBLIC_KEY` / `VECTA_JWT_PRIVATE_KEY` for JWT auth routes.
+
 ### After the first deploy
 
 1. **Migrations** — Run SQL migrations against the Render database (from your machine or a one-off job), same order as `package.json` `db:migrate`:
