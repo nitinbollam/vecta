@@ -25,6 +25,7 @@ import { authMiddleware } from "./middleware/auth.middleware";
 import { requestLogger } from "./middleware/request-logger.middleware";
 import { errorHandler } from "./middleware/error-handler.middleware";
 import { logger } from "./lib/logger";
+import { getPgSslConfig } from "@vecta/database";
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ export const db = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  ssl: getPgSslConfig(),
 });
 
 export const redis = new Redis(process.env.REDIS_URL!, {

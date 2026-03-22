@@ -13,6 +13,38 @@ import { createLogger } from '@vecta/logger';
 const logger = createLogger('database');
 
 // ---------------------------------------------------------------------------
+// TLS (managed Postgres on Render, etc.)
+// ---------------------------------------------------------------------------
+
+/**
+ * SSL options for node-postgres. Render Postgres certificates often fail Node’s
+ * default chain verification; on Render we still use TLS but skip CA verification
+ * unless DATABASE_SSL_REJECT_UNAUTHORIZED is set.
+ *
+ * DATABASE_SSL_REJECT_UNAUTHORIZED=true  — always verify (strict)
+ * DATABASE_SSL_REJECT_UNAUTHORIZED=false — never verify (e.g. custom CA not installed)
+ */
+export function getPgSslConfig(): false | { rejectUnauthorized: boolean } {
+  const explicit = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
+  if (explicit === 'true') {
+    return { rejectUnauthorized: true };
+  }
+  if (explicit === 'false') {
+    return { rejectUnauthorized: false };
+  }
+
+  if (process.env.NODE_ENV !== 'production') {
+    return false;
+  }
+
+  if (process.env.RENDER === 'true') {
+    return { rejectUnauthorized: false };
+  }
+
+  return { rejectUnauthorized: true };
+}
+
+// ---------------------------------------------------------------------------
 // Pool singleton
 // ---------------------------------------------------------------------------
 
@@ -26,10 +58,7 @@ export function getPool(): Pool {
     max: parseInt(process.env.DB_POOL_MAX ?? '20', 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    ssl:
-      process.env.NODE_ENV === 'production'
-        ? { rejectUnauthorized: true }
-        : false,
+    ssl: getPgSslConfig(),
   });
 
   _pool.on('connect', (client) => {
