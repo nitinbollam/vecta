@@ -69,3 +69,11 @@ web-build/
 
 # AWS
 .aws/credentials
+
+# Compiled output
+*.js.map
+*.d.ts.map
+services/*/src/*.js
+services/*/src/*.d.ts
+packages/*/src/*.js
+packages/*/src/*.d.ts
