@@ -7,10 +7,8 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import { Pool } from "pg";
 import Redis from "ioredis";
 import { identityRouter } from "./routes/identity.router";
-import { bankingRouter } from "./routes/banking.router";
 import { housingRouter } from "./routes/housing.router";
 import { mobilityRouter } from "./routes/mobility.router";
 import { tokenRouter }    from "./routes/token.router";
@@ -20,24 +18,19 @@ import { insuranceRouter }   from "./routes/insurance.router";
 import { certificateRouter } from "./routes/certificate.router";
 import { complianceRouter }  from "./routes/compliance.router";
 import { protocolRouter }    from "./routes/protocol.router";
-import { webhookRouter } from "./routes/webhook.router";
+import { identityWebhooksRouter } from "./routes/identity-webhooks.router";
 import { authMiddleware } from "./middleware/auth.middleware";
 import { requestLogger } from "./middleware/request-logger.middleware";
 import { errorHandler } from "./middleware/error-handler.middleware";
 import { logger } from "./lib/logger";
-import { getPgSslConfig } from "@vecta/database";
+import { getPool } from "@vecta/database";
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
 
-export const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  ssl: getPgSslConfig(),
-});
+/** Single shared pool (same instance as @vecta/database helpers). */
+export const db = getPool();
 
-export const redis = new Redis(process.env.REDIS_URL!, {
+export const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
   maxRetriesPerRequest: 3,
   lazyConnect: true,
 });
@@ -89,7 +82,6 @@ const globalRateLimiter = rateLimit({
   },
 });
 
-// Stricter limiter for auth endpoints
 // Stricter limiter for Vecta ID token generation
 const tokenRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,  // 1 hour
@@ -147,16 +139,14 @@ app.get("/health", async (_req, res) => {
 app.get("/ready", (req, res) => res.json({ ready: true }));
 
 // ─── Public Routes (no auth) ──────────────────────────────────────────────────
-
-// Webhooks — authenticate via HMAC, not JWT
-app.use("/webhooks", webhookRouter);
+// Provider webhooks (HMAC) — must not sit behind JWT middleware
+app.use("/webhooks", identityWebhooksRouter);
 
 // ─── Protected Routes (JWT required) ─────────────────────────────────────────
 
 app.use("/api/v1", authMiddleware(redis));
 
 app.use("/api/v1/identity", tokenRateLimiter, identityRouter);
-app.use("/api/v1/banking", bankingRouter(db, redis));
 app.use("/api/v1/housing", housingRouter);
 app.use("/api/v1/mobility", mobilityRouter);
 app.use("/api/v1",          tokenRouter);

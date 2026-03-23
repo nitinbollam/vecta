@@ -15,8 +15,7 @@ import {
   VectaGradients, VectaShadows,
 } from '../../constants/theme';
 import { VectaIDStatusBadge, VectaBadge, SkeletonLoader } from '../../components/ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 type TxCategory = 'RENT_INCOME' | 'ESIM_TOPUP' | 'BANK_TRANSFER' | 'CARD_PAYMENT' | 'FEE' | 'OTHER';
 interface TransactionLine {
@@ -103,7 +102,7 @@ export default function BankingScreen() {
     if (!authToken || profile?.kycStatus !== 'APPROVED') return;
     setTxLoading(true);
     try {
-      const res  = await fetch(`${API_BASE}/identity/transactions?limit=20`, { headers: { Authorization: `Bearer ${authToken}` } });
+      const res  = await fetch(`${API_V1_BASE}/identity/transactions?limit=20`, { headers: { Authorization: `Bearer ${authToken}` } });
       const data = await res.json() as { transactions: TransactionLine[] };
       setTransactions(data.transactions ?? []);
     } catch { /* silent */ } finally { setTxLoading(false); }

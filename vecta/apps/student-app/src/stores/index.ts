@@ -11,15 +11,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_V1_BASE } from '../config/api';
 
 // ---------------------------------------------------------------------------
 // API client helper
 // ---------------------------------------------------------------------------
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-
 async function apiGet<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_V1_BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
@@ -27,7 +26,7 @@ async function apiGet<T>(path: string, token: string): Promise<T> {
 }
 
 async function apiPost<T>(path: string, body: unknown, token: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_V1_BASE}${path}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

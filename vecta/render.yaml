@@ -2,7 +2,9 @@
 # https://render.com/docs/blueprint-spec
 #
 # Deploy: Dashboard → New → Blueprint → connect repo → apply this file.
-# After first deploy, set sync: false / dashboard secrets (JWT keys, ALLOWED_ORIGINS, COMPLIANCE_AI_URL, vendor APIs).
+# After first deploy, paste secrets via Environment → Add from .env using:
+#   env/render-api-gateway.env.example
+#   env/render-compliance-ai.env.example
 #
 # pgvector: Render Postgres may not include pgvector. For roommate AI you may need Neon / Supabase / self-hosted PG — see docs/DEPLOY_VERCEL_RENDER.md
 
@@ -36,6 +38,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
+      - key: SERVICE_NAME
+        value: vecta-api-gateway
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL

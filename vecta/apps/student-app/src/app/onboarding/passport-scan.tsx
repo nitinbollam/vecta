@@ -21,8 +21,7 @@ import { useStudentStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,7 +69,7 @@ export default function PassportScanScreen() {
       if (!sessionId || !authToken) return;
 
       try {
-        const res = await fetch(`${API_BASE}/identity/verify/${sessionId}`, {
+        const res = await fetch(`${API_V1_BASE}/identity/verify/${sessionId}`, {
           headers: { Authorization: `Bearer ${authToken}` },
         });
         const data = await res.json() as { status: string; kycStatus?: string };
@@ -97,7 +96,7 @@ export default function PassportScanScreen() {
 
     setScanState('initiating');
     try {
-      const res = await fetch(`${API_BASE}/identity/verify/initiate`, {
+      const res = await fetch(`${API_V1_BASE}/identity/verify/initiate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId: profile.id }),

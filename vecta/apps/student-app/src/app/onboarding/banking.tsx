@@ -9,8 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients } from '../../constants/theme';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 const BANKING_FEATURES = [
   { icon: 'card',           text: 'Real US debit card — Visa network' },
@@ -33,7 +32,7 @@ export default function BankingOnboardingScreen() {
     if (!authToken) return;
     setState('provisioning');
     try {
-      const res = await fetch(`${API_BASE}/identity/banking/provision`, {
+      const res = await fetch(`${API_V1_BASE}/identity/banking/provision`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}` },
       });

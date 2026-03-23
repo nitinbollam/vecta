@@ -10,16 +10,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
 import {
   useFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  Inter_800ExtraBold,
-} from '@expo-google-fonts/inter';
+  DMSans_400Regular,
+  DMSans_500Medium,
+  DMSans_600SemiBold,
+  DMSans_700Bold,
+  DMSans_800ExtraBold,
+} from '@expo-google-fonts/dm-sans';
+import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 import { useStudentStore } from '../stores';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../config/api';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -42,7 +42,7 @@ function useMagicLinkHandler() {
 
       if (!token || !email) return;
 
-      const res = await fetch(`${API_BASE}/auth/verify`, {
+      const res = await fetch(`${API_V1_BASE}/auth/verify`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ token, email }),
@@ -80,19 +80,13 @@ function useMagicLinkHandler() {
 
 function useAuthGuard() {
   const { authToken, profile } = useStudentStore();
-  const [hydrated, setHydrated] = useStudentStore((s) => [s.authToken !== undefined, () => {}]);
 
   useEffect(() => {
-    // Skip until Zustand rehydration is done (AsyncStorage read)
-    // The store's `authToken` starts as null (not undefined) after hydration
+    // authToken starts as null (not undefined) after Zustand rehydration
     if (authToken === undefined) return;
 
     if (!authToken) {
-      // No session → login screen
       router.replace('/auth/login');
-    } else if (profile && profile.kycStatus !== 'APPROVED') {
-      // Authenticated but not verified → onboarding
-      // Don't redirect if already on onboarding
     }
   }, [authToken, profile]);
 }
@@ -102,19 +96,18 @@ function useAuthGuard() {
 // ---------------------------------------------------------------------------
 
 export default function RootLayout() {
-  const { authToken } = useStudentStore();
+  useAuthGuard();
+  useMagicLinkHandler();
 
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-    Inter_800ExtraBold,
+    BebasNeue_400Regular,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    DMSans_600SemiBold,
+    DMSans_700Bold,
+    DMSans_800ExtraBold,
     JetBrainsMono_400Regular,
   });
-
-  // Handle magic-link deep links
-  useMagicLinkHandler();
 
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();

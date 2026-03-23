@@ -110,6 +110,8 @@ npm install
 ### 2. Configure environment
 ```bash
 cp .env.example .env
+# Optional overrides without editing .env: copy secrets into env/local.env (gitignored).
+# Render: use env/render-api-gateway.env.example → Dashboard → Environment → Add from .env
 # Fill in API keys for: Didit, Unit.co, Plaid, Nova Credit, eSIM Go, Lemonade, OpenAI, Anthropic
 # Generate RSA keypair for JWT:
 openssl genrsa -out private.pem 4096

@@ -22,8 +22,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius,
   VectaGradients,
 } from '../../constants/theme';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 const SUPPORTED_BANKS = [
   'Chase', 'Bank of America', 'Wells Fargo', 'Citibank',
@@ -49,7 +48,7 @@ export default function PlaidLinkScreen() {
 
     try {
       // 1. Get Plaid link token
-      const tokenRes = await fetch(`${API_BASE}/housing/plaid/link-token`, {
+      const tokenRes = await fetch(`${API_V1_BASE}/housing/plaid/link-token`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const { linkToken } = await tokenRes.json() as { linkToken: string };
@@ -61,7 +60,7 @@ export default function PlaidLinkScreen() {
       // For demo: simulate success after 2 seconds
       setTimeout(async () => {
         // Simulate exchange
-        await fetch(`${API_BASE}/housing/plaid/exchange`, {
+        await fetch(`${API_V1_BASE}/housing/plaid/exchange`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ publicToken: 'demo_public_token' }),

@@ -20,6 +20,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useStudentStore } from "@/store/student.store";
 import { VectaColors, VectaFonts } from "@/constants/design";
+import { API_V1_BASE } from "@/config/api";
 
 interface ConsentClauses {
   strictlyPassive: boolean;
@@ -31,7 +32,7 @@ interface ConsentClauses {
 const DISCLAIMER_CLAUSES = [
   {
     key: "strictlyPassive" as keyof ConsentClauses,
-    title: "The "Strictly Passive" Acknowledgment",
+    title: 'The "Strictly Passive" Acknowledgment',
     body: `By enrolling my vehicle in the Vecta Fleet, I am acting solely as a passive lessor of a capital asset (my vehicle). I am strictly prohibited from driving my own vehicle for Vecta Rides customers, maintaining the vehicle between rides on Vecta's behalf, or engaging in any active management of the fleet. I understand that active participation constitutes unauthorized employment under F-1 visa regulations.`,
   },
   {
@@ -41,7 +42,7 @@ const DISCLAIMER_CLAUSES = [
   },
   {
     key: "flightRecorder" as keyof ConsentClauses,
-    title: "The "Flight Recorder" Audit Consent",
+    title: 'The "Flight Recorder" Audit Consent',
     body: `To protect my F-1 visa status in the event of a USCIS or IRS audit, I authorize Vecta to log the GPS telemetry, driver assignments, and financial ledger of my vehicle. This "Flight Recorder" data will serve as legal proof that I was physically separate from the vehicle's operation while it was generating rental income.`,
   },
   {
@@ -88,7 +89,7 @@ export default function VehicleEnrollmentScreen() {
             setSubmitting(true);
             try {
               const res = await fetch(
-                `${process.env.EXPO_PUBLIC_API_URL}/api/v1/mobility/enroll-vehicle`,
+                `${API_V1_BASE}/mobility/enroll-vehicle`,
                 {
                   method: "POST",
                   headers: {

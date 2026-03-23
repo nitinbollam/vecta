@@ -24,8 +24,7 @@ import { useStudentStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 type AuthStep = 'entry' | 'check_email' | 'verifying';
 
@@ -51,7 +50,7 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/auth/magic-link`, {
+      const res = await fetch(`${API_V1_BASE}/auth/magic-link`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ email: trimmed }),
@@ -78,7 +77,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/dev-token`, { method: 'POST' });
+      const res = await fetch(`${API_V1_BASE}/auth/dev-token`, { method: 'POST' });
       const { token } = await res.json() as { token: string };
       setAuthToken(token);
       await fetchProfile();

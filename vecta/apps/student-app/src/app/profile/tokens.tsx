@@ -28,8 +28,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { VectaBadge } from '../../components/ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,7 +156,7 @@ export default function TokenManagementScreen() {
   const fetchTokens = useCallback(async () => {
     if (!authToken) return;
     try {
-      const res = await fetch(`${API_BASE}/identity/tokens`, {
+      const res = await fetch(`${API_V1_BASE}/identity/tokens`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json() as { tokens: TokenRecord[] };
@@ -188,7 +187,7 @@ export default function TokenManagementScreen() {
           onPress: async () => {
             if (!authToken) return;
             try {
-              await fetch(`${API_BASE}/identity/tokens/${encodeURIComponent(jti)}/revoke`, {
+              await fetch(`${API_V1_BASE}/identity/tokens/${encodeURIComponent(jti)}/revoke`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${authToken}` },
               });

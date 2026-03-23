@@ -12,8 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius } from '../../constants/theme';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 const PLANS = [
   { id: '5g_unlimited', label: '5G Unlimited',  price: '$45/mo', data: 'Unlimited data',   badge: 'BEST VALUE', badgeColor: VectaColors.success },
@@ -31,7 +30,7 @@ export default function EsimScreen() {
     if (!authToken) return;
     setState('activating');
     try {
-      const res = await fetch(`${API_BASE}/identity/esim/provision`, {
+      const res = await fetch(`${API_V1_BASE}/identity/esim/provision`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: selectedPlan }),

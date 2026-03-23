@@ -9,9 +9,11 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A2FA0"
+      "backgroundColor": "#001F3F"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "io.vecta.app",
@@ -21,13 +23,16 @@
         "NSCameraUsageDescription": "Vecta uses your camera for liveness checks during identity verification."
       },
       "entitlements": {
-        "com.apple.developer.nfc.readersession.formats": ["TAG", "NDEF"]
+        "com.apple.developer.nfc.readersession.formats": [
+          "TAG",
+          "NDEF"
+        ]
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A2FA0"
+        "backgroundColor": "#001F3F"
       },
       "package": "io.vecta.app",
       "permissions": [
@@ -46,7 +51,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#1A2FA0",
+          "backgroundColor": "#001F3F",
           "image": "./assets/splash.png",
           "imageWidth": 200
         }
@@ -58,8 +63,12 @@
     "scheme": "vecta",
     "extra": {
       "eas": {
-        "projectId": "vecta-platform"
+        "projectId": "83c101ab-e818-4558-b7b6-10d47c1eedf7"
+      },
+      "router": {
+        "origin": false
       }
-    }
+    },
+    "owner": "nitin1005"
   }
 }

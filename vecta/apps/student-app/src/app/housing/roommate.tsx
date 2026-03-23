@@ -22,8 +22,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { VectaBadge, SkeletonLoader } from '../../components/ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -207,7 +206,7 @@ export default function RoommateScreen() {
     setLoading(true);
     try {
       // 1. Upsert lifestyle profile + generate embedding
-      await fetch(`${API_BASE}/housing/roommate/profile`, {
+      await fetch(`${API_V1_BASE}/housing/roommate/profile`, {
         method:  'POST',
         headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -227,7 +226,7 @@ export default function RoommateScreen() {
       });
 
       // 2. Fetch matches
-      const res = await fetch(`${API_BASE}/housing/roommate/matches`, {
+      const res = await fetch(`${API_V1_BASE}/housing/roommate/matches`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json() as { matches: RoommateMatch[] };

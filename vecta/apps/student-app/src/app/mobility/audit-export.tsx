@@ -25,8 +25,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { StatusRow, VectaBadge } from '../../components/ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+import { API_V1_BASE } from '../../config/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -209,7 +208,7 @@ export default function AuditExportScreen() {
     if (!authToken) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/mobility/audit/chain?year=${year}`, {
+      const res = await fetch(`${API_V1_BASE}/mobility/audit/chain?year=${year}`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json() as ChainExport;

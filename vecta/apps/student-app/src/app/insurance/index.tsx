@@ -20,9 +20,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { ModuleCard, StatusRow, VectaBadge } from '../../components/ui';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-const AI_BASE  = process.env.EXPO_PUBLIC_COMPLIANCE_AI_URL ?? 'http://localhost:8000';
+import { API_V1_BASE, COMPLIANCE_AI_BASE } from '../../config/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,7 +77,7 @@ function HealthPlanChecker() {
       formData.append('student_id', profile?.id ?? 'unknown');
       formData.append('university_name', profile?.universityName ?? '');
 
-      const res = await fetch(`${AI_BASE}/insurance/analyze-university-plan`, {
+      const res = await fetch(`${COMPLIANCE_AI_BASE}/insurance/analyze-university-plan`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}` },
         body: formData,

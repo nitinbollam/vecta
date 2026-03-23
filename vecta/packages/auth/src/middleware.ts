@@ -53,6 +53,47 @@ function extractBearerToken(req: Request): string | null {
   return authHeader.slice(7).trim() || null;
 }
 
+/** Paths mounted under /api/v1 that must not require a Bearer JWT (magic links, webhooks-by-proxy, JWKS, etc.). */
+function normalizeGatewayPath(req: Request): string {
+  const raw = (req.originalUrl ?? req.url ?? "").split("?")[0] ?? "";
+  if (raw.length > 1 && raw.endsWith("/")) return raw.slice(0, -1);
+  return raw;
+}
+
+export function isUnauthenticatedPublicApiV1Route(req: Request): boolean {
+  const method = req.method;
+  if (method === "OPTIONS" || method === "HEAD") return true;
+
+  const path = normalizeGatewayPath(req);
+
+  const postExact = new Set([
+    "/api/v1/auth/magic-link",
+    "/api/v1/auth/verify",
+    "/api/v1/auth/dev-token",
+    "/api/v1/identity/token/verify",
+    "/api/v1/landlord/register",
+    "/api/v1/landlord/verify-email",
+    "/api/v1/landlord/onboard",
+    "/api/v1/landlord/acceptance",
+    "/api/v1/certificate/verify",
+    "/api/v1/protocol/verify",
+  ]);
+
+  if (method === "POST" && postExact.has(path)) return true;
+  if (method === "POST" && /^\/api\/v1\/certificate\/[^/]+\/accept$/.test(path)) return true;
+
+  if (method === "GET") {
+    if (path === "/api/v1/landlord/social-proof") return true;
+    if (/^\/api\/v1\/landlord\/comparable\/[^/]+$/.test(path)) return true;
+    if (/^\/api\/v1\/certificate\/[^/]+$/.test(path)) return true;
+    if (path === "/api/v1/protocol/liquidity/pools") return true;
+    if (path === "/api/v1/keys/jwks") return true;
+    if (path === "/api/v1/keys/rotate-status") return true;
+  }
+
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Extend Express Request
 // ---------------------------------------------------------------------------
@@ -80,6 +121,11 @@ export async function authMiddleware(
     (req.headers['x-correlation-id'] as string) ??
     crypto.randomUUID();
   res.setHeader('x-correlation-id', req.correlationId);
+
+  if (isUnauthenticatedPublicApiV1Route(req)) {
+    next();
+    return;
+  }
 
   const jwtPublicKey = getJwtPublicKey();
   if (!jwtPublicKey) {

@@ -131,7 +131,7 @@ export function ModuleCard({
       onPress={onPress}
       disabled={!onPress}
       activeOpacity={0.92}
-      style={[cardStyles.wrapper, VectaShadows.card, style]}
+      style={[cardStyles.wrapper, VectaShadows.md, style]}
     >
       {/* Header gradient */}
       <LinearGradient

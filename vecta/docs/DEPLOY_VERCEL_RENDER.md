@@ -53,7 +53,7 @@ Do **not** use `cd vecta/apps/...` when Root Directory is already `vecta` (that 
    - `COMPLIANCE_AI_URL` = `https://<vecta-compliance-ai-service-name>.onrender.com` (no trailing slash).
    - `ALLOWED_ORIGINS` = comma-separated browser origins that call the API, e.g. `https://your-portal.vercel.app,https://app.yourdomain.com`.
 
-3. **Secrets** — Copy the rest from `.env.example` into Render env (JWT keys, `VECTA_FIELD_ENCRYPTION_KEY`, `VECTA_HMAC_SECRET`, `INTERNAL_SERVICE_SECRET`, Didit, Unit, Plaid, S3, etc.). Use the same values for any service that needs them.
+3. **Secrets** — Use **Environment → Add from .env** with `env/render-api-gateway.env.example` (fill placeholders), or copy keys from the root `.env.example`. Include JWT keys, `VECTA_FIELD_ENCRYPTION_KEY`, `VECTA_HMAC_SECRET`, `INTERNAL_SERVICE_SECRET`, Didit, Unit, Plaid, S3, etc., as needed for the routes you enable.
 
 4. **pgvector** — Prefer **Supabase** (below) or another Postgres that ships **pgvector**. If you use Supabase, skip provisioning Render Postgres in the blueprint (remove the `databases:` block and `fromDatabase` `DATABASE_URL` entries, then set `DATABASE_URL` manually on each web service), or keep Render Postgres for non-vector workloads only.
 
