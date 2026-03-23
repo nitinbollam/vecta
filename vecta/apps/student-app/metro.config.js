@@ -7,7 +7,8 @@ const workspaceRoot = path.resolve(projectRoot, '../..');
 const config = getDefaultConfig(projectRoot);
 
 // Watch the monorepo root so Metro can find workspace packages (e.g. @vecta/types)
-config.watchFolders = [workspaceRoot];
+// Merge with any defaults Expo may have already set
+config.watchFolders = [...(config.watchFolders ?? []), workspaceRoot];
 
 // Resolve modules from both the app's and the workspace root's node_modules
 config.resolver.nodeModulesPaths = [
