@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
         os.environ["REDIS_URL"],
         decode_responses=True,
     )
-    openai_client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    anthropic_client = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+    anthropic_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
 
     logger.info("Compliance AI service started")
     yield
