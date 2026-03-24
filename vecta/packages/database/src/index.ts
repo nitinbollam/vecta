@@ -61,12 +61,12 @@ export function getPool(): Pool {
     ssl: getPgSslConfig(),
   });
 
-  _pool.on('connect', (client) => {
+  _pool.on('connect', (client: PoolClient) => {
     // Enable pgvector on every new connection
     client.query("SET search_path TO public; SELECT 1").catch(() => {});
   });
 
-  _pool.on('error', (err) => {
+  _pool.on('error', (err: Error) => {
     logger.error({ err }, 'Unexpected idle client error');
   });
 
