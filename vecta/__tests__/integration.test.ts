@@ -40,6 +40,15 @@ jest.mock('@vecta/crypto', () => ({
   generateUUID:    () => '550e8400-e29b-41d4-a716-446655440000',
 }));
 
+jest.mock('@vecta/storage', () => ({
+  uploadToS3:           jest.fn().mockResolvedValue({ key: 'test-key', eTag: 'test-etag', url: 'https://s3.example.com/test' }),
+  getSignedDownloadUrl: jest.fn().mockResolvedValue('https://s3.example.com/signed'),
+  uploadSelfieToS3:     jest.fn().mockResolvedValue({ key: 'selfie-key', signedUrl: 'https://s3.example.com/selfie' }),
+  getSignedSelfieUrl:   jest.fn().mockResolvedValue('https://s3.example.com/selfie-signed'),
+  uploadLocPdf:         jest.fn().mockResolvedValue({ key: 'loc-key', signedUrl: 'https://s3.example.com/loc' }),
+  deleteFromS3:         jest.fn().mockResolvedValue(undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Single-use token lifecycle
 // ---------------------------------------------------------------------------

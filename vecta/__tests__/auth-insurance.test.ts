@@ -45,6 +45,20 @@ jest.mock('@vecta/storage', () => ({
   uploadLocPdf:            jest.fn().mockResolvedValue({ key: 'loc-key', signedUrl: 'https://s3.example.com/loc' }),
 }));
 
+// Must be top-level (not inside describe) so Jest hoists it before module imports.
+jest.mock('axios', () => ({
+  create: jest.fn().mockReturnValue({
+    post: jest.fn().mockResolvedValue({ data: {
+      quoteId: 'test-quote',
+      premium: { monthly: 67, annual: 804 },
+      coverage: {},
+      bindUrl: 'https://lemonade.com/bind',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }}),
+    interceptors: { response: { use: jest.fn() } },
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Trust engine (pure function — no mocking needed)
 // ---------------------------------------------------------------------------
@@ -121,20 +135,6 @@ describe('Trust Engine: property-based tests', () => {
 import { LemonadeService } from '../services/identity-service/src/lemonade.service';
 
 describe('Lemonade: F-1 auto insurance constraints', () => {
-  // Mock axios to avoid real HTTP
-  jest.mock('axios', () => ({
-    create: jest.fn().mockReturnValue({
-      post: jest.fn().mockResolvedValue({ data: {
-        quoteId: 'test-quote',
-        premium: { monthly: 67, annual: 804 },
-        coverage: {},
-        bindUrl: 'https://lemonade.com/bind',
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      }}),
-      interceptors: { response: { use: jest.fn() } },
-    }),
-  }));
-
   const svc = new LemonadeService();
 
   const baseAutoInput = {

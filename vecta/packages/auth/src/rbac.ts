@@ -25,11 +25,13 @@ export interface AuthenticatedRequest extends Request {
 
 // ─── Permission Matrix ────────────────────────────────────────────────────────
 // Maps resource:action -> allowed roles. Omission = deny.
+// String[] (not StudentRole[]) so non-student roles (LANDLORD, DSO, ADMIN) can be listed.
 
-export const PERMISSION_MAP: Record<string, StudentRole[]> = {
+export const PERMISSION_MAP: Record<string, string[]> = {
   // Identity
   "identity:read_own": [StudentRole.STUDENT, StudentRole.LESSOR],
   "identity:verify": [StudentRole.STUDENT, StudentRole.LESSOR],
+  "identity:verify_student": ["LANDLORD"],  // Landlord portal: verify a student's token
 
   // Banking
   "banking:view_balance": [StudentRole.STUDENT, StudentRole.LESSOR],
@@ -42,12 +44,15 @@ export const PERMISSION_MAP: Record<string, StudentRole[]> = {
   // Mobility — LESSOR actions (passive only)
   "mobility:enroll_vehicle": [StudentRole.STUDENT],  // Can enroll (becomes LESSOR)
   "mobility:view_lease_earnings": [StudentRole.LESSOR],
+  "mobility:view_earnings": [StudentRole.LESSOR],          // canonical alias
   "mobility:view_flight_recorder": [StudentRole.LESSOR],
+  "mobility:export_audit_chain": [StudentRole.LESSOR],     // USCIS / IRS audit export
 
   // ─── CRITICAL F-1 COMPLIANCE ──────────────────────────────────────────────
-  // LESSOR is excluded here — only STUDENT may accept rides / go online as driver.
-  "mobility:accept_ride": [StudentRole.STUDENT],
-  "mobility:go_online_as_driver": [StudentRole.STUDENT],
+  // Empty arrays = architectural dead end. checkPermission returns
+  // F1_VISA_COMPLIANCE_VIOLATION for ALL roles (see F1_DEAD_END_PERMISSIONS).
+  "mobility:accept_ride": [],
+  "mobility:go_online_as_driver": [],
 
   // Insurance
   "insurance:get_quotes": [StudentRole.STUDENT, StudentRole.LESSOR],
@@ -58,6 +63,12 @@ export const PERMISSION_MAP: Record<string, StudentRole[]> = {
   // DSO Memo
   "compliance:generate_dso_memo": [StudentRole.LESSOR],
 };
+
+// Permissions that are prohibited for ALL roles — always return F1_VISA_COMPLIANCE_VIOLATION.
+const F1_DEAD_END_PERMISSIONS = new Set([
+  "mobility:accept_ride",
+  "mobility:go_online_as_driver",
+]);
 
 // ─── Role Conflicts (cannot hold simultaneously) ──────────────────────────────
 // A user CANNOT be both LESSOR and any driving role. If they attempt to
@@ -75,30 +86,22 @@ export interface RBACResult {
   reason?: string;
 }
 
-function parseStudentRole(role: string): StudentRole | null {
-  if (role === StudentRole.STUDENT || role === StudentRole.LESSOR) return role;
-  return null;
-}
-
 /**
  * Check a single JWT role string against the permission matrix (API gateway).
+ *
+ * F-1 dead-end permissions (`mobility:accept_ride`, `mobility:go_online_as_driver`)
+ * return F1_VISA_COMPLIANCE_VIOLATION for every role — the empty PERMISSION_MAP
+ * entry is the architectural signal; this function is the enforcement layer.
  */
 export function checkPermission(role: UserRole, permission: string): RBACResult {
-  const sr = parseStudentRole(role);
-  const allowedRoles = PERMISSION_MAP[permission] ?? [];
-
-  if (allowedRoles.length === 0) {
-    return { allowed: false, reason: "INSUFFICIENT_ROLE" };
+  if (F1_DEAD_END_PERMISSIONS.has(permission)) {
+    return { allowed: false, reason: "F1_VISA_COMPLIANCE_VIOLATION" };
   }
 
-  if (!sr || !allowedRoles.includes(sr)) {
-    const isF1Block =
-      sr === StudentRole.LESSOR &&
-      (permission === "mobility:accept_ride" || permission === "mobility:go_online_as_driver");
-    return {
-      allowed: false,
-      reason: isF1Block ? "F1_VISA_COMPLIANCE_VIOLATION" : "INSUFFICIENT_ROLE",
-    };
+  const allowedRoles = PERMISSION_MAP[permission] ?? [];
+
+  if (allowedRoles.length === 0 || !allowedRoles.includes(role)) {
+    return { allowed: false, reason: "INSUFFICIENT_ROLE" };
   }
 
   return { allowed: true };

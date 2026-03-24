@@ -129,7 +129,13 @@ export function computeTrustScore(input: TrustEngineInput): TrustEngineResult {
   );
 
   // --- 6. Tier assignment ---
-  const guaranteeTier = assignTier(compositeScore);
+  let guaranteeTier = assignTier(compositeScore);
+
+  // Hard liquidity floor: zero verified balance cannot support a SILVER+ guarantee.
+  if (input.verifiedBalanceUsd <= 0 &&
+      (guaranteeTier === 'SILVER' || guaranteeTier === 'GOLD' || guaranteeTier === 'PLATINUM')) {
+    guaranteeTier = 'STANDARD';
+  }
 
   // --- 7. Derived limits ---
   const { maxRentApproval, depositMultiplier, guaranteeMonths } =
