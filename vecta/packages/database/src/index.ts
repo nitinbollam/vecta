@@ -21,8 +21,10 @@ const logger = createLogger('database');
  * default chain verification; on Render we still use TLS but skip CA verification
  * unless DATABASE_SSL_REJECT_UNAUTHORIZED is set.
  *
- * DATABASE_SSL_REJECT_UNAUTHORIZED=true  — always verify (strict)
- * DATABASE_SSL_REJECT_UNAUTHORIZED=false — never verify (e.g. custom CA not installed)
+ * DATABASE_SSL_REJECT_UNAUTHORIZED=true  — enforce full CA chain (strict)
+ * DATABASE_SSL_REJECT_UNAUTHORIZED=false — skip CA verification (explicit opt-out)
+ * (unset, dev)                           — SSL disabled entirely
+ * (unset, production)                    — SSL on, self-signed certs accepted
  */
 export function getPgSslConfig(): false | { rejectUnauthorized: boolean } {
   const explicit = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED;
@@ -37,16 +39,39 @@ export function getPgSslConfig(): false | { rejectUnauthorized: boolean } {
     return false;
   }
 
-  if (process.env.RENDER === 'true') {
-    return { rejectUnauthorized: false };
-  }
-
-  return { rejectUnauthorized: true };
+  // Production default: accept self-signed certificates.
+  // Managed Postgres providers (Render, Railway, Supabase, Neon) use self-signed
+  // CA chains; strict verification causes "self-signed certificate in certificate
+  // chain" without a custom CA bundle installed.
+  // Set DATABASE_SSL_REJECT_UNAUTHORIZED=true to enforce strict CA verification.
+  return { rejectUnauthorized: false };
 }
 
 // ---------------------------------------------------------------------------
 // Pool singleton
 // ---------------------------------------------------------------------------
+
+/**
+ * Strip `sslmode` (and `uselibpqcompat`) from a postgres connection string so
+ * that pg-connection-string never touches SSL configuration.  SSL is controlled
+ * exclusively via the `ssl` option passed to `new Pool()`.
+ *
+ * Background: pg-connection-string ≥ 2.7 / pg ≥ 8.12 treats `sslmode=require`
+ * as an alias for `sslmode=verify-full` (strict CA verification), which breaks
+ * connections to managed-Postgres providers that use self-signed CAs (Render,
+ * Railway, Supabase, etc.).  Removing the param from the URL lets node-postgres
+ * use the explicit `ssl` object instead.
+ */
+function stripSslMode(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('sslmode');
+    parsed.searchParams.delete('uselibpqcompat');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
 let _pool: Pool | null = null;
 
@@ -54,7 +79,7 @@ export function getPool(): Pool {
   if (_pool) return _pool;
 
   _pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: stripSslMode(process.env.DATABASE_URL ?? ''),
     max: parseInt(process.env.DB_POOL_MAX ?? '20', 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
