@@ -79,15 +79,15 @@ function useMagicLinkHandler() {
 // ---------------------------------------------------------------------------
 
 function useAuthGuard() {
-  const authToken = useStudentStore((s) => s.authToken);
-  const navState  = useRootNavigationState();
+  const authToken  = useStudentStore((s) => s.authToken);
+  const navReady   = !!useRootNavigationState()?.key;
 
   useEffect(() => {
-    if (!navState?.key) return; // navigator not mounted yet
+    if (!navReady) return;
     if (authToken === null) {
       router.replace('/auth/login');
     }
-  }, [authToken, navState?.key]);
+  }, [authToken, navReady]);
 }
 
 // ---------------------------------------------------------------------------
