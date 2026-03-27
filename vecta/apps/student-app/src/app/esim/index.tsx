@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius } from '../../constants/theme';
 import { API_V1_BASE } from '../../config/api';
+import { useTheme } from '../../context/ThemeContext';
 
 // ---------------------------------------------------------------------------
 // Plan info
@@ -75,7 +76,8 @@ const faqStyle = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function EsimManagementScreen() {
-  const authToken = useStudentStore((s) => s.authToken);
+  const { colors }  = useTheme();
+  const authToken   = useStudentStore((s) => s.authToken);
   const [activating, setActivating] = useState(false);
   const [activated,  setActivated]  = useState(false);
   const [qrCodeUrl,  setQrCodeUrl]  = useState<string | null>(null);
@@ -102,7 +104,7 @@ export default function EsimManagementScreen() {
   const gradient: [string, string] = ['#0284C7', '#06B6D4'];
 
   return (
-    <View style={{ flex: 1, backgroundColor: VectaColors.surface1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface1 }}>
       {/* Header */}
       <LinearGradient colors={gradient} style={styles.header}>
         <TouchableOpacity

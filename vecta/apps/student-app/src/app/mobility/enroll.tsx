@@ -21,6 +21,7 @@ import * as Haptics from "expo-haptics";
 import { useStudentStore } from "@/store/student.store";
 import { VectaColors, VectaFonts } from "@/constants/design";
 import { API_V1_BASE } from "@/config/api";
+import { useTheme } from "@/context/ThemeContext";
 
 interface ConsentClauses {
   strictlyPassive: boolean;
@@ -53,8 +54,9 @@ const DISCLAIMER_CLAUSES = [
 ];
 
 export default function VehicleEnrollmentScreen() {
-  const authToken = useStudentStore((s) => s.authToken);
-  const profile   = useStudentStore((s) => s.profile);
+  const { colors }  = useTheme();
+  const authToken   = useStudentStore((s) => s.authToken);
+  const profile     = useStudentStore((s) => s.profile);
   const [clauses, setClauses] = useState<ConsentClauses>({
     strictlyPassive: false,
     taxClassification: false,
@@ -129,7 +131,7 @@ export default function VehicleEnrollmentScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface1 }]} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}

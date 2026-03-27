@@ -21,6 +21,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius,
   VectaGradients, VectaShadows,
 } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import { ModuleCard, StatusRow, SolvencyBadge, VectaBadge } from '../../components/ui';
 
 // ---------------------------------------------------------------------------
@@ -197,8 +198,9 @@ const locStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function HousingScreen() {
+  const { colors }                               = useTheme();
   const { trustScore, isLoading, fetchTrustScore } = useHousingStore();
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing]              = useState(false);
 
   useEffect(() => { fetchTrustScore(); }, [fetchTrustScore]);
 
@@ -210,7 +212,7 @@ export default function HousingScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: VectaColors.surface1 }}
+      style={{ flex: 1, backgroundColor: colors.surface1 }}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VectaColors.housing} />}
     >

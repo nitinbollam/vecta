@@ -14,6 +14,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius,
   VectaGradients, VectaShadows,
 } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import { VectaIDStatusBadge, VectaBadge, SkeletonLoader } from '../../components/ui';
 import { API_V1_BASE } from '../../config/api';
 
@@ -91,6 +92,7 @@ function TransactionRow({ tx }: { tx: TransactionLine }) {
 }
 
 export default function BankingScreen() {
+  const { colors }                               = useTheme();
   const { profile }                              = useStudentStore();
   const { balance, isLoading: balLoading, fetchBalance } = useBalanceStore();
   const [transactions, setTransactions]          = useState<TransactionLine[]>([]);
@@ -119,7 +121,7 @@ export default function BankingScreen() {
   const isPending = profile?.kycStatus !== 'APPROVED';
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: VectaColors.surface1 }} showsVerticalScrollIndicator={false}
+    <ScrollView style={{ flex: 1, backgroundColor: colors.surface1 }} showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VectaColors.primary} />}>
 
       <LinearGradient colors={VectaGradients.banking} style={{ paddingTop: 60, paddingBottom: VectaSpacing['6'], paddingHorizontal: VectaSpacing['6'], gap: 4 }}>

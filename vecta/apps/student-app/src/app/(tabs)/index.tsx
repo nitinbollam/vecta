@@ -25,6 +25,7 @@ import { API_V1_BASE } from '@/config/api';
 import { VectaIDStatusBadge } from '@/components/VectaIDStatusBadge';
 import { ModuleCard } from '@/components/ModuleCard';
 import { VectaColors, VectaFonts } from '@/constants/design';
+import { useTheme } from '@/context/ThemeContext';
 
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export default function DashboardScreen() {
   const fetchVehicles  = useMobilityStore((s) => s.fetchVehicles);
   const fetchEarnings  = useMobilityStore((s) => s.fetchEarnings);
 
+  const { colors } = useTheme();
   const isLoading = profileLoading || balanceLoading;
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -122,7 +124,7 @@ export default function DashboardScreen() {
   const ytdIncomeUSD = ((earnings?.ytdRentalIncome ?? 0)).toFixed(2);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface1 }]} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={

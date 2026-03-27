@@ -24,6 +24,7 @@ import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 import { useStudentStore } from '../stores';
 import { API_V1_BASE } from '../config/api';
+import { ThemeProvider } from '../context/ThemeContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -105,6 +106,7 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
+    <ThemeProvider>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
@@ -115,5 +117,6 @@ export default function RootLayout() {
         <Stack.Screen name="esim/index"          options={{ headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
+    </ThemeProvider>
   );
 }

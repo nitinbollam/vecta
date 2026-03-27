@@ -21,6 +21,7 @@ import { useStudentStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import { VectaBadge, SkeletonLoader } from '../../components/ui';
 import { API_V1_BASE } from '../../config/api';
 
@@ -204,6 +205,7 @@ const DEFAULT_PROFILE: ProfileForm = {
 };
 
 export default function RoommateScreen() {
+  const { colors }             = useTheme();
   const { authToken, profile } = useStudentStore();
   const [step,      setStep]   = useState<'profile' | 'matches'>('profile');
   const [usingMock, setUsingMock] = useState(false);
@@ -260,7 +262,7 @@ export default function RoommateScreen() {
   }, [step, handleSearch]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: VectaColors.surface1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.surface1 }}>
       <LinearGradient colors={VectaGradients.housing} style={screen.header}>
         <TouchableOpacity onPress={() => router.back()}
           style={{ width: 36, height: 36, borderRadius: VectaRadius.full, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: VectaSpacing['3'] }}>
@@ -317,14 +319,14 @@ export default function RoommateScreen() {
           {/* Budget */}
           <Text style={og.label}>Monthly Budget</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: VectaSpacing['3'], marginBottom: VectaSpacing['4'] }}>
-            <View style={{ flex: 1, backgroundColor: VectaColors.surfaceBase, borderRadius: VectaRadius.lg, borderWidth: 1, borderColor: VectaColors.border, padding: VectaSpacing['3'], alignItems: 'center' }}>
+            <View style={{ flex: 1, backgroundColor: colors.surfaceBase, borderRadius: VectaRadius.lg, borderWidth: 1, borderColor: colors.border, padding: VectaSpacing['3'], alignItems: 'center' }}>
               <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.lg, color: VectaColors.housing }}>${form.budgetMin.toLocaleString()}</Text>
-              <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: VectaColors.textMuted }}>Min</Text>
+              <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: colors.textMuted }}>Min</Text>
             </View>
-            <Ionicons name="arrow-forward" size={16} color={VectaColors.textMuted} />
-            <View style={{ flex: 1, backgroundColor: VectaColors.surfaceBase, borderRadius: VectaRadius.lg, borderWidth: 1, borderColor: VectaColors.border, padding: VectaSpacing['3'], alignItems: 'center' }}>
+            <Ionicons name="arrow-forward" size={16} color={colors.textMuted} />
+            <View style={{ flex: 1, backgroundColor: colors.surfaceBase, borderRadius: VectaRadius.lg, borderWidth: 1, borderColor: colors.border, padding: VectaSpacing['3'], alignItems: 'center' }}>
               <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.lg, color: VectaColors.housing }}>${form.budgetMax.toLocaleString()}</Text>
-              <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: VectaColors.textMuted }}>Max</Text>
+              <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: colors.textMuted }}>Max</Text>
             </View>
           </View>
 

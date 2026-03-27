@@ -73,6 +73,76 @@ export const VectaColors = {
 export type VectaColor = keyof typeof VectaColors;
 
 // ---------------------------------------------------------------------------
+// Dark mode colour tokens
+// ---------------------------------------------------------------------------
+
+export const VectaDarkColors = {
+  // Backgrounds
+  background:      '#0A0F1E',
+  surface1:        '#0F1628',
+  surface2:        '#141D35',
+  surfaceBase:     '#141D35',
+  surfaceElevated: '#1A2540',
+
+  // Brand
+  primary:         '#001F3F',
+  primaryMid:      '#001A33',
+  primaryLight:    '#003060',
+  accent:          '#00E6CC',
+  accentDim:       '#00B8A4',
+  accentGlow:      'rgba(0,230,204,0.18)',
+
+  // Text
+  text:            '#FFFFFF',
+  textSecondary:   '#A8B8C8',
+  textMuted:       '#5A7080',
+
+  // Borders
+  border:          '#1E2D45',
+  borderLight:     '#243550',
+  borderDark:      '#1A2540',
+
+  // Status (same as light but darker bg)
+  success:         '#00C896',
+  successBg:       'rgba(0,200,150,0.15)',
+  warning:         '#F59E0B',
+  warningBg:       'rgba(245,158,11,0.15)',
+  error:           '#EF4444',
+  errorBg:         'rgba(239,68,68,0.15)',
+  info:            '#00E6CC',
+  infoBg:          'rgba(0,230,204,0.12)',
+
+  // Status badges
+  badgeVerified:   '#00C896',
+  badgePending:    '#F59E0B',
+  badgeRejected:   '#EF4444',
+  badgeLocked:     '#5A7080',
+
+  // Gradients (same as light — already dark)
+  gradientStart:   '#0F1628',
+  gradientEnd:     '#0A0F1E',
+  cardBg:          '#141D35',
+
+  // Module colours (same hue, darker bg versions)
+  banking:         '#5B4AE8',
+  bankingBg:       'rgba(91,74,232,0.2)',
+  housing:         '#00C896',
+  housingBg:       'rgba(0,200,150,0.15)',
+  mobility:        '#FF6B35',
+  mobilityBg:      'rgba(255,107,53,0.15)',
+  connectivity:    '#00E6CC',
+  connectivityBg:  'rgba(0,230,204,0.12)',
+  insurance:       '#001F3F',
+  insuranceBg:     'rgba(91,74,232,0.12)',
+
+  // Misc
+  black:           '#000D1A',
+  white:           '#FFFFFF',
+  backdrop:        'rgba(0,0,0,0.75)',
+  background_rn:   '#0A0F1E',
+} as const;
+
+// ---------------------------------------------------------------------------
 // Gradients
 // ---------------------------------------------------------------------------
 

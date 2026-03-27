@@ -9,7 +9,8 @@
 import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useStudentStore } from '../../stores';
-import { VectaColors, VectaFonts } from '../../constants/theme';
+import { VectaFonts } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -27,10 +28,9 @@ const TABS: Array<{
 ];
 
 export default function TabLayout() {
-  // Selector keeps this component isolated — only re-renders when authToken changes
-  const authToken = useStudentStore((s) => s.authToken);
+  const authToken      = useStudentStore((s) => s.authToken);
+  const { isDark }     = useTheme();
 
-  // Declarative auth guard — Expo Router handles this correctly without loops
   if (!authToken) {
     return <Redirect href="/auth/login" />;
   }
@@ -40,15 +40,15 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: VectaColors.surfaceBase,
-          borderTopColor: VectaColors.border,
+          backgroundColor: isDark ? '#0F1628' : '#FFFFFF',
+          borderTopColor:  isDark ? '#1E2D45' : '#E5E7EB',
           borderTopWidth: 1,
           paddingBottom: 8,
           paddingTop: 6,
           height: 64,
         },
-        tabBarActiveTintColor:   VectaColors.primary,
-        tabBarInactiveTintColor: VectaColors.textMuted,
+        tabBarActiveTintColor:   '#00E6CC',
+        tabBarInactiveTintColor: isDark ? '#5A7080' : '#9CA3AF',
         tabBarLabelStyle: {
           fontFamily: VectaFonts.medium,
           fontSize:   VectaFonts.xs,

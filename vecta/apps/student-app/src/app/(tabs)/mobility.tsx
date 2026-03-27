@@ -27,6 +27,7 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius,
   VectaGradients, VectaShadows,
 } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import {
   ModuleCard, StatusRow, VectaBadge, SkeletonLoader,
 } from '../../components/ui';
@@ -362,6 +363,7 @@ const ctaStyle = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function MobilityScreen() {
+  const { colors }                                                = useTheme();
   const { profile }                                               = useStudentStore();
   const { vehicles, earnings, fetchVehicles, fetchEarnings, isLoading } = useMobilityStore();
   const [refreshing, setRefreshing]                               = useState(false);
@@ -385,7 +387,7 @@ export default function MobilityScreen() {
 
   return (
     <ScrollView
-      style={screen.container}
+      style={[screen.container, { backgroundColor: colors.surface1 }]}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={VectaColors.mobility} />}
     >

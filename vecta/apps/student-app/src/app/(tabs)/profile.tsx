@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme, type ThemeMode } from '../../context/ThemeContext';
 import { useStudentStore, useBalanceStore, useHousingStore, useMobilityStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
@@ -130,6 +131,7 @@ type ModuleItem = {
 };
 
 function ModuleHealth() {
+  const { colors }              = useTheme();
   const { profile }             = useStudentStore();
   const { balance }             = useBalanceStore();
   const { trustScore, activeLoC } = useHousingStore();
@@ -170,8 +172,8 @@ function ModuleHealth() {
   ];
 
   return (
-    <View style={healthStyle.container}>
-      <Text style={healthStyle.title}>Platform Status</Text>
+    <View style={[healthStyle.container, { backgroundColor: colors.surfaceBase, borderColor: colors.border }]}>
+      <Text style={[healthStyle.title, { color: colors.text }]}>Platform Status</Text>
       <View style={healthStyle.grid}>
         {modules.map(({ icon, label, status, detail, onPress }) => (
           <TouchableOpacity
@@ -224,31 +226,32 @@ interface SettingsRowProps {
 }
 
 function SettingsRow({ icon, label, value, onPress, toggle, destructive }: SettingsRowProps) {
+  const { colors } = useTheme();
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={!onPress && !toggle}
-      style={rowStyle.container}
+      style={[rowStyle.container, { backgroundColor: colors.surfaceBase, borderBottomColor: colors.border }]}
       activeOpacity={0.7}
     >
       <View style={rowStyle.left}>
-        <View style={[rowStyle.iconWrap, destructive && { backgroundColor: VectaColors.errorBg }]}>
-          <Ionicons name={icon} size={18} color={destructive ? VectaColors.error : VectaColors.primary} />
+        <View style={[rowStyle.iconWrap, { backgroundColor: colors.surface2 }, destructive && { backgroundColor: colors.errorBg }]}>
+          <Ionicons name={icon} size={18} color={destructive ? colors.error : colors.primary} />
         </View>
-        <Text style={[rowStyle.label, destructive && { color: VectaColors.error }]}>{label}</Text>
+        <Text style={[rowStyle.label, { color: colors.text }, destructive && { color: colors.error }]}>{label}</Text>
       </View>
       <View style={rowStyle.right}>
-        {value && <Text style={rowStyle.value}>{value}</Text>}
+        {value && <Text style={[rowStyle.value, { color: colors.textMuted }]}>{value}</Text>}
         {toggle && (
           <Switch
             value={toggle.value}
             onValueChange={toggle.onChange}
-            trackColor={{ false: VectaColors.border, true: VectaColors.primary }}
+            trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor="#FFF"
           />
         )}
         {onPress && !toggle && (
-          <Ionicons name="chevron-forward" size={16} color={VectaColors.textMuted} />
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
         )}
       </View>
     </TouchableOpacity>
@@ -269,8 +272,9 @@ const rowStyle = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 function SectionHeader({ title }: { title: string }) {
+  const { colors } = useTheme();
   return (
-    <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.xs, color: VectaColors.textMuted, letterSpacing: VectaFonts.letterSpacing.wider, paddingHorizontal: VectaSpacing['4'], paddingTop: VectaSpacing['5'], paddingBottom: VectaSpacing['2'] }}>
+    <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.xs, color: colors.textMuted, letterSpacing: VectaFonts.letterSpacing.wider, paddingHorizontal: VectaSpacing['4'], paddingTop: VectaSpacing['5'], paddingBottom: VectaSpacing['2'] }}>
       {title.toUpperCase()}
     </Text>
   );
@@ -282,8 +286,13 @@ function SectionHeader({ title }: { title: string }) {
 
 const LANGUAGES = ['English', 'Spanish', 'Hindi', 'Mandarin', 'Arabic', 'Portuguese'];
 
+const MODE_LABELS: Record<ThemeMode, string> = {
+  light: 'Light', dark: 'Dark', system: 'System',
+};
+
 export default function ProfileScreen() {
-  const { profile, clearSession } = useStudentStore();
+  const { profile, clearSession }             = useStudentStore();
+  const { mode, isDark, colors, setMode }     = useTheme();
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [biometricsOn,    setBiometricsOn]    = useState(true);
   const [language,        setLanguage]        = useState('English');
@@ -313,6 +322,19 @@ export default function ProfileScreen() {
     setBiometricsOn(value);
     await AsyncStorage.setItem('biometric_auth_enabled', String(value));
   }, []);
+
+  const handleAppearance = useCallback(() => {
+    Alert.alert(
+      'Appearance',
+      'Choose theme',
+      [
+        { text: 'Light',  onPress: () => setMode('light')  },
+        { text: 'Dark',   onPress: () => setMode('dark')   },
+        { text: 'System', onPress: () => setMode('system') },
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    );
+  }, [setMode]);
 
   const handleLanguage = useCallback(() => {
     Alert.alert(
@@ -355,7 +377,7 @@ export default function ProfileScreen() {
   }, [clearSession]);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: VectaColors.surface1 }} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.surface1 }} showsVerticalScrollIndicator={false}>
       <ProfileHero />
       <ShareVectaID />
       <ModuleHealth />
@@ -385,6 +407,12 @@ export default function ProfileScreen() {
         icon="finger-print"
         label="Biometric Auth"
         toggle={{ value: biometricsOn, onChange: handleBiometricsToggle }}
+      />
+      <SettingsRow
+        icon="color-palette"
+        label="Appearance"
+        value={MODE_LABELS[mode]}
+        onPress={handleAppearance}
       />
       <SettingsRow
         icon="language"

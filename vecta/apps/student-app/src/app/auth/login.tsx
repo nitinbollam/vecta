@@ -25,10 +25,12 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { API_V1_BASE } from '../../config/api';
+import { useTheme } from '../../context/ThemeContext';
 
 type AuthStep = 'entry' | 'check_email' | 'verifying';
 
 export default function LoginScreen() {
+  const { colors }   = useTheme();
   const setAuthToken = useStudentStore((s) => s.setAuthToken);
   const setProfile   = useStudentStore((s) => s.setProfile);
 
@@ -115,16 +117,16 @@ export default function LoginScreen() {
 
           {/* --- Step: Entry --- */}
           {step === 'entry' && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Sign In</Text>
-              <Text style={styles.cardSubtitle}>
+            <View style={[styles.card, { backgroundColor: colors.surfaceBase }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Sign In</Text>
+              <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
                 Enter your university email to receive a sign-in link.
                 No password needed.
               </Text>
 
-              <Text style={styles.inputLabel}>University Email</Text>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>University Email</Text>
               <TextInput
-                style={[styles.input, error ? styles.inputError : null]}
+                style={[styles.input, { backgroundColor: colors.surface2, color: colors.text, borderColor: colors.border }, error ? styles.inputError : null]}
                 placeholder="you@university.edu"
                 placeholderTextColor={VectaColors.textMuted}
                 value={email}
@@ -185,7 +187,7 @@ export default function LoginScreen() {
 
           {/* --- Step: Check email --- */}
           {step === 'check_email' && (
-            <View style={styles.card}>
+            <View style={[styles.card, { backgroundColor: colors.surfaceBase }]}>
               <View style={styles.emailIcon}>
                 <Text style={{ fontSize: 40 }}>📧</Text>
               </View>
@@ -216,7 +218,7 @@ export default function LoginScreen() {
 
           {/* --- Step: Verifying (deep link handler) --- */}
           {step === 'verifying' && (
-            <View style={[styles.card, { alignItems: 'center', gap: VectaSpacing['4'] }]}>
+            <View style={[styles.card, { backgroundColor: colors.surfaceBase, alignItems: 'center', gap: VectaSpacing['4'] }]}>
               <ActivityIndicator size="large" color={VectaColors.accent} />
               <Text style={styles.cardTitle}>Signing you in…</Text>
             </View>
