@@ -79,16 +79,13 @@ function useMagicLinkHandler() {
 // ---------------------------------------------------------------------------
 
 function useAuthGuard() {
-  const { authToken, profile } = useStudentStore();
+  const authToken = useStudentStore((s) => s.authToken);
 
   useEffect(() => {
-    // authToken starts as null (not undefined) after Zustand rehydration
-    if (authToken === undefined) return;
-
-    if (!authToken) {
+    if (authToken === null) {
       router.replace('/auth/login');
     }
-  }, [authToken, profile]);
+  }, [authToken]);
 }
 
 // ---------------------------------------------------------------------------
