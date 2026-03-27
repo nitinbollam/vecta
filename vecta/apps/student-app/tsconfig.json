@@ -5,9 +5,19 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@vecta/types": ["../../packages/types/src"]
+      "@/*": [
+        "src/*"
+      ],
+      "@vecta/types": [
+        "../../packages/types/src"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.d.ts",
+    "expo-env.d.ts",
+    ".expo/types/**/*.ts"
+  ]
 }
