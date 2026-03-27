@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaShadows, VectaGradients } from '../constants/theme';
+import { VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaShadows, VectaGradients } from '../../constants/theme';
 
 // ---------------------------------------------------------------------------
 // VectaIDStatusBadge
