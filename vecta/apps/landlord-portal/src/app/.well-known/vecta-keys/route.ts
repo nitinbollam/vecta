@@ -31,7 +31,7 @@ export const revalidate = 86400; // 24h
 export async function GET(_req: NextRequest): Promise<NextResponse> {
   try {
     // Fetch from API gateway (which has access to the key registry)
-    const base = process.env.VECTA_INTERNAL_API_URL ?? 'http://api-gateway:4000';
+    const base = process.env.VECTA_INTERNAL_API_URL ?? 'https://vecta-elaf.onrender.com';
     const res  = await fetch(`${base}/api/v1/keys/jwks`, {
       next: { revalidate: 3600 },
     });
