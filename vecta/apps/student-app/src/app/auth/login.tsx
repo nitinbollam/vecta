@@ -14,7 +14,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
+  TextInput, ActivityIndicator, KeyboardAvoidingView,
   Platform, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,7 +29,8 @@ import { API_V1_BASE } from '../../config/api';
 type AuthStep = 'entry' | 'check_email' | 'verifying';
 
 export default function LoginScreen() {
-  const { setAuthToken, fetchProfile } = useStudentStore();
+  const setAuthToken = useStudentStore((s) => s.setAuthToken);
+  const setProfile   = useStudentStore((s) => s.setProfile);
 
   const [step,    setStep]    = useState<AuthStep>('entry');
   const [email,   setEmail]   = useState('');
@@ -70,24 +71,27 @@ export default function LoginScreen() {
   }, [email]);
 
   // ---------------------------------------------------------------------------
-  // Dev bypass — skip auth in development
+  // Dev bypass — inject mock data locally, no network call needed.
+  // Works on physical devices where localhost:4000 is unreachable, and on
+  // Render where NODE_ENV=production disables the dev-token endpoint.
   // ---------------------------------------------------------------------------
-  const handleDevBypass = useCallback(async () => {
+  const handleDevBypass = useCallback(() => {
     if (process.env.NODE_ENV === 'production') return;
 
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_V1_BASE}/auth/dev-token`, { method: 'POST' });
-      const { token } = await res.json() as { token: string };
-      setAuthToken(token);
-      await fetchProfile();
-      router.replace('/(tabs)');
-    } catch {
-      Alert.alert('Dev bypass failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [setAuthToken, fetchProfile]);
+    setAuthToken('dev-token-local');
+    setProfile({
+      id:               'dev-student-00000000-0000-0000-0000-000000000000',
+      fullName:         'Dev Student',
+      universityName:   'MIT',
+      programOfStudy:   'Computer Science',
+      visaStatus:       'F-1',
+      visaValidThrough: '2027-08-31',
+      kycStatus:        'APPROVED',
+      vectaIdStatus:    'VERIFIED',
+      role:             'STUDENT',
+    });
+    router.replace('/(tabs)');
+  }, [setAuthToken, setProfile]);
 
   return (
     <LinearGradient colors={VectaGradients.hero} style={{ flex: 1 }}>

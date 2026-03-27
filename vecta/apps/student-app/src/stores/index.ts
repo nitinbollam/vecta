@@ -68,6 +68,7 @@ interface StudentState {
   error: string | null;
   // Actions
   setAuthToken: (token: string) => void;
+  setProfile: (profile: StudentProfile) => void;
   fetchProfile: () => Promise<void>;
   refreshSelfieUrl: () => Promise<void>;
   mintVectaIdToken: () => Promise<void>;
@@ -83,6 +84,8 @@ export const useStudentStore = create<StudentState>()(
       error:     null,
 
       setAuthToken: (token) => set({ authToken: token }),
+
+      setProfile: (profile) => set({ profile }),
 
       fetchProfile: async () => {
         const token = get().authToken;
