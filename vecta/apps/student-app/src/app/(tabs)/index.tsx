@@ -232,6 +232,19 @@ export default function DashboardScreen() {
             )}
           </ModuleCard>
 
+          {/* Insurance */}
+          <ModuleCard
+            testID="insurance-card"
+            icon="🛡️"
+            title="Insurance"
+            status="active"
+            onPress={() => router.push('/(tabs)/insurance')}
+          >
+            <Text style={styles.moduleSubtext}>
+              Health, renters &amp; auto coverage — F-1 compliant
+            </Text>
+          </ModuleCard>
+
           {/* AI Roommate Finder */}
           <ModuleCard
             testID="roommates-card"
