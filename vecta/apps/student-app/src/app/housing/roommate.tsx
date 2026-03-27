@@ -53,6 +53,16 @@ interface ProfileForm {
 }
 
 // ---------------------------------------------------------------------------
+// Mock data shown when API is offline
+// ---------------------------------------------------------------------------
+
+const MOCK_MATCHES: RoommateMatch[] = [
+  { student_id: '1', compatibility_score: 0.94, major_category: 'Computer Science', university_name: 'MIT', sleep_schedule: 'flexible',   cleanliness: 'clean',      noise_level: 'moderate',   languages: ['English', 'Hindi'],    budget_min: 900,  budget_max: 1800 },
+  { student_id: '2', compatibility_score: 0.87, major_category: 'Engineering',      university_name: 'MIT', sleep_schedule: 'early_bird', cleanliness: 'very_clean', noise_level: 'very_quiet', languages: ['English', 'Tamil'],    budget_min: 800,  budget_max: 1600 },
+  { student_id: '3', compatibility_score: 0.81, major_category: 'Business',         university_name: 'MIT', sleep_schedule: 'flexible',   cleanliness: 'clean',      noise_level: 'moderate',   languages: ['English', 'Mandarin'], budget_min: 1000, budget_max: 2000 },
+];
+
+// ---------------------------------------------------------------------------
 // Option selector component
 // ---------------------------------------------------------------------------
 
@@ -196,6 +206,7 @@ const DEFAULT_PROFILE: ProfileForm = {
 export default function RoommateScreen() {
   const { authToken, profile } = useStudentStore();
   const [step,      setStep]   = useState<'profile' | 'matches'>('profile');
+  const [usingMock, setUsingMock] = useState(false);
   const [form,      setForm]   = useState<ProfileForm>(DEFAULT_PROFILE);
   const [matches,   setMatches]  = useState<RoommateMatch[]>([]);
   const [loading,   setLoading]  = useState(false);
@@ -233,7 +244,9 @@ export default function RoommateScreen() {
       setMatches(data.matches ?? []);
       setStep('matches');
     } catch {
-      Alert.alert('Error', 'Could not find matches. Please try again.');
+      setMatches(MOCK_MATCHES);
+      setUsingMock(true);
+      setStep('matches');
     } finally {
       setLoading(false);
     }
@@ -341,6 +354,14 @@ export default function RoommateScreen() {
             </TouchableOpacity>
           </View>
 
+          {usingMock && (
+            <View style={{ backgroundColor: '#FFF7ED', borderRadius: VectaRadius.md, padding: VectaSpacing['3'], marginBottom: VectaSpacing['3'], flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="wifi-outline" size={14} color="#C2410C" />
+              <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: '#9A3412', flex: 1 }}>
+                Live AI matching activates when compliance service is online
+              </Text>
+            </View>
+          )}
           {matches.length === 0 ? (
             <View style={{ alignItems: 'center', paddingVertical: VectaSpacing['10'], gap: VectaSpacing['3'] }}>
               <Ionicons name="people-outline" size={48} color={VectaColors.textMuted} />

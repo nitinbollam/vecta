@@ -159,12 +159,40 @@ export default function BankingScreen() {
       {/* Quick actions */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: VectaSpacing['4'], marginBottom: VectaSpacing['6'] }}>
         {[
-          { icon: 'arrow-down-circle' as const, label: 'Add Money', color: VectaColors.success },
-          { icon: 'arrow-up-circle'   as const, label: 'Send',      color: VectaColors.banking },
-          { icon: 'swap-horizontal'   as const, label: 'Exchange',  color: VectaColors.mobility },
-          { icon: 'qr-code'           as const, label: 'My QR',     color: VectaColors.primary },
-        ].map(({ icon, label, color }) => (
-          <TouchableOpacity key={label} style={{ alignItems: 'center', gap: 6 }} activeOpacity={0.8}>
+          {
+            icon: 'arrow-down-circle' as const,
+            label: 'Add Money',
+            color: VectaColors.success,
+            onPress: () => Alert.alert(
+              'Add Money via ACH',
+              `Transfer funds to your Vecta account.\n\nRouting: 084106768\nAccount ending: ••••${balance?.unitAccountLast4 ?? '????'}\n\nACH transfers typically arrive in 1–3 business days.`,
+              [{ text: 'Got it' }],
+            ),
+          },
+          {
+            icon: 'arrow-up-circle' as const,
+            label: 'Send',
+            color: VectaColors.banking,
+            onPress: () => Alert.alert('Coming Soon', 'P2P transfers are coming in the next update.'),
+          },
+          {
+            icon: 'swap-horizontal' as const,
+            label: 'Exchange',
+            color: VectaColors.mobility,
+            onPress: () => Alert.alert('Coming Soon', 'Currency exchange is coming in the next update.'),
+          },
+          {
+            icon: 'qr-code' as const,
+            label: 'My QR',
+            color: VectaColors.primary,
+            onPress: () => Alert.alert(
+              'Your Account QR',
+              `Account ending: ••••${balance?.unitAccountLast4 ?? '????'}\n\nShow this QR code to receive payments directly to your Vecta account.`,
+              [{ text: 'Close' }],
+            ),
+          },
+        ].map(({ icon, label, color, onPress }) => (
+          <TouchableOpacity key={label} style={{ alignItems: 'center', gap: 6 }} activeOpacity={0.8} onPress={onPress}>
             <View style={{ width: 52, height: 52, borderRadius: VectaRadius.xl, backgroundColor: color + '18', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name={icon} size={24} color={color} />
             </View>

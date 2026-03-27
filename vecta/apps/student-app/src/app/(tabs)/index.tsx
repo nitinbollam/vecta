@@ -4,13 +4,14 @@
 import React, { useEffect } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
-  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useStudentStore } from '@/store/student.store';
 import { useBalanceStore } from '@/store/balance.store';
 import { useHousingStore, useMobilityStore } from '@/stores';
+import { API_V1_BASE } from '@/config/api';
 import { VectaIDStatusBadge } from '@/components/VectaIDStatusBadge';
 import { ModuleCard } from '@/components/ModuleCard';
 import { VectaColors, VectaFonts } from '@/constants/design';
@@ -66,7 +68,22 @@ export default function DashboardScreen() {
 
   const handleShareVectaID = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/profile/tokens');
+    try {
+      if (!authToken) {
+        Alert.alert('Error', 'Please sign in to share your Vecta ID.');
+        return;
+      }
+      const res  = await fetch(`${API_V1_BASE}/identity/token/mint`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json() as { url?: string; token?: string };
+      const url  = data.url ?? (data.token ? `https://verify.vecta.io/verify/${data.token}` : null);
+      if (!url) throw new Error('No verification URL returned');
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert('Error', 'Could not generate verification link. Please try again.');
+    }
   };
 
   const handleEnrollVehicle = async () => {

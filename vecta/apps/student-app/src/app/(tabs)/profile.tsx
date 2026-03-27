@@ -1,17 +1,8 @@
 /**
  * (tabs)/profile.tsx — Vecta Profile & Settings Tab
- *
- * Sections:
- *   1. Profile hero — photo, name, Vecta ID status, university
- *   2. Share Vecta ID — generates/shares Vecta ID token link
- *   3. Module status overview — quick health check of all 6 modules
- *   4. F-1 Compliance Summary — visa status, role, SEVIS
- *   5. Settings — notifications, biometrics, language
- *   6. Legal — privacy, terms, DSO contact
- *   7. Logout
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Image, Share, Alert, Switch,
@@ -19,6 +10,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStudentStore, useBalanceStore, useHousingStore, useMobilityStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
@@ -35,7 +28,6 @@ function ProfileHero() {
 
   return (
     <LinearGradient colors={VectaGradients.hero} style={heroStyle.container}>
-      {/* Avatar */}
       <View style={heroStyle.avatarWrap}>
         {profile.selfieUrl ? (
           <Image source={{ uri: profile.selfieUrl }} style={heroStyle.avatar} />
@@ -44,7 +36,6 @@ function ProfileHero() {
             <Ionicons name="person" size={40} color="rgba(255,255,255,0.6)" />
           </View>
         )}
-        {/* Verified ring */}
         {profile.vectaIdStatus === 'VERIFIED' && (
           <View style={heroStyle.verifiedRing}>
             <Ionicons name="shield-checkmark" size={16} color={VectaColors.success} />
@@ -52,17 +43,13 @@ function ProfileHero() {
         )}
       </View>
 
-      {/* Name + university */}
       <Text style={heroStyle.name}>{profile.fullName}</Text>
       <Text style={heroStyle.university}>{profile.universityName}</Text>
       <Text style={heroStyle.program}>{profile.programOfStudy}</Text>
 
-      {/* Vecta ID status */}
       <View style={{ marginTop: VectaSpacing['3'] }}>
         <VectaIDStatusBadge status={profile.vectaIdStatus} />
       </View>
-
-      {/* Role badge */}
       {profile.role === 'LESSOR' && (
         <View style={{ marginTop: VectaSpacing['2'] }}>
           <VectaBadge label="LESSOR — Schedule E Active" variant="warning" />
@@ -97,7 +84,6 @@ function ShareVectaID() {
       await mintVectaIdToken();
       setMinting(false);
     }
-
     if (profile?.vectaIdToken) {
       const verifyUrl = `https://verify.vecta.io/verify/${profile.vectaIdToken}`;
       await Share.share({
@@ -135,51 +121,66 @@ const shareStyle = StyleSheet.create({
 // Module health overview
 // ---------------------------------------------------------------------------
 
-function ModuleHealth() {
-  const { profile }       = useStudentStore();
-  const { balance }       = useBalanceStore();
-  const { trustScore, activeLoC } = useHousingStore();
-  const { vehicles }      = useMobilityStore();
+type ModuleItem = {
+  icon:     keyof typeof Ionicons.glyphMap;
+  label:    string;
+  status:   'ok' | 'pending' | 'idle';
+  detail:   string;
+  onPress?: () => void;
+};
 
-  const modules = [
+function ModuleHealth() {
+  const { profile }             = useStudentStore();
+  const { balance }             = useBalanceStore();
+  const { trustScore, activeLoC } = useHousingStore();
+  const { vehicles }            = useMobilityStore();
+
+  const modules: ModuleItem[] = [
     {
-      icon: 'finger-print' as const,
+      icon: 'finger-print',
       label: 'Identity',
       status: profile?.vectaIdStatus === 'VERIFIED' ? 'ok' : 'pending',
       detail: profile?.vectaIdStatus === 'VERIFIED' ? 'NFC Verified' : 'Not verified',
     },
     {
-      icon: 'card' as const,
+      icon: 'card',
       label: 'Banking',
       status: profile?.kycStatus === 'APPROVED' ? 'ok' : 'pending',
       detail: profile?.kycStatus === 'APPROVED' ? 'Account active' : 'KYC pending',
     },
     {
-      icon: 'cellular' as const,
+      icon: 'cellular',
       label: 'SIM',
-      status: 'ok' as const,
+      status: 'ok',
       detail: 'eSIM active',
+      onPress: () => router.push('/esim'),
     },
     {
-      icon: 'home' as const,
+      icon: 'home',
       label: 'Housing',
       status: trustScore ? 'ok' : 'pending',
       detail: trustScore ? `Score: ${trustScore.score}` : 'Bank not linked',
     },
     {
-      icon: 'car-sport' as const,
+      icon: 'car-sport',
       label: 'Fleet',
       status: vehicles.length > 0 ? 'ok' : 'idle',
       detail: vehicles.length > 0 ? `${vehicles.length} vehicle(s)` : 'Not enrolled',
     },
-  ] as const;
+  ];
 
   return (
     <View style={healthStyle.container}>
       <Text style={healthStyle.title}>Platform Status</Text>
       <View style={healthStyle.grid}>
-        {modules.map(({ icon, label, status, detail }) => (
-          <View key={label} style={healthStyle.item}>
+        {modules.map(({ icon, label, status, detail, onPress }) => (
+          <TouchableOpacity
+            key={label}
+            style={healthStyle.item}
+            onPress={onPress}
+            disabled={!onPress}
+            activeOpacity={onPress ? 0.7 : 1}
+          >
             <View style={[healthStyle.dot, {
               backgroundColor:
                 status === 'ok'      ? VectaColors.success :
@@ -187,11 +188,12 @@ function ModuleHealth() {
                 VectaColors.border,
             }]} />
             <Ionicons name={icon} size={16} color={VectaColors.textSecondary} />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={healthStyle.itemLabel}>{label}</Text>
               <Text style={healthStyle.itemDetail}>{detail}</Text>
             </View>
-          </View>
+            {onPress && <Ionicons name="chevron-forward" size={12} color={VectaColors.textMuted} />}
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -213,11 +215,11 @@ const healthStyle = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 interface SettingsRowProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value?: string;
-  onPress?: () => void;
-  toggle?: { value: boolean; onChange: (v: boolean) => void };
+  icon:        keyof typeof Ionicons.glyphMap;
+  label:       string;
+  value?:      string;
+  onPress?:    () => void;
+  toggle?:     { value: boolean; onChange: (v: boolean) => void };
   destructive?: boolean;
 }
 
@@ -278,10 +280,56 @@ function SectionHeader({ title }: { title: string }) {
 // Main screen
 // ---------------------------------------------------------------------------
 
+const LANGUAGES = ['English', 'Spanish', 'Hindi', 'Mandarin', 'Arabic', 'Portuguese'];
+
 export default function ProfileScreen() {
   const { profile, clearSession } = useStudentStore();
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [biometricsOn,    setBiometricsOn]    = useState(true);
+  const [language,        setLanguage]        = useState('English');
+
+  // Load persisted preferences from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.multiGet(['push_notifications_enabled', 'biometric_auth_enabled', 'preferred_language'])
+      .then(([[, notif], [, bio], [, lang]]) => {
+        if (notif !== null) setNotificationsOn(notif === 'true');
+        if (bio  !== null) setBiometricsOn(bio === 'true');
+        if (lang !== null) setLanguage(lang);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleNotificationsToggle = useCallback(async (value: boolean) => {
+    setNotificationsOn(value);
+    await AsyncStorage.setItem('push_notifications_enabled', String(value));
+    Alert.alert(
+      value ? 'Notifications Enabled' : 'Notifications Disabled',
+      value ? 'You will receive alerts for important account updates.' : 'You will no longer receive push notifications.',
+      [{ text: 'OK' }],
+    );
+  }, []);
+
+  const handleBiometricsToggle = useCallback(async (value: boolean) => {
+    setBiometricsOn(value);
+    await AsyncStorage.setItem('biometric_auth_enabled', String(value));
+  }, []);
+
+  const handleLanguage = useCallback(() => {
+    Alert.alert(
+      'Select Language',
+      '',
+      [
+        ...LANGUAGES.map((lang) => ({
+          text: lang,
+          onPress: async () => {
+            setLanguage(lang);
+            await AsyncStorage.setItem('preferred_language', lang);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    );
+  }, []);
 
   const handleLogout = useCallback(() => {
     Alert.alert(
@@ -292,9 +340,14 @@ export default function ProfileScreen() {
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            await AsyncStorage.multiRemove([
+              'push_notifications_enabled',
+              'biometric_auth_enabled',
+              'preferred_language',
+            ]);
             clearSession();
-            router.replace('/onboarding');
+            router.replace('/auth/login');
           },
         },
       ],
@@ -303,22 +356,17 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: VectaColors.surface1 }} showsVerticalScrollIndicator={false}>
-      {/* Hero */}
       <ProfileHero />
-
-      {/* Share Vecta ID */}
       <ShareVectaID />
-
-      {/* Module health */}
       <ModuleHealth />
 
       {/* F-1 Compliance */}
       <SectionHeader title="F-1 Compliance" />
       <SettingsRow icon="document-text"  label="Visa Status"    value={profile?.visaStatus ?? 'F-1'} />
       <SettingsRow icon="school"         label="University"     value={profile?.universityName ?? '—'} />
-      <SettingsRow icon="shield"         label="SEVIS Status"   value="Active"  />
+      <SettingsRow icon="shield"         label="SEVIS Status"   value="Active" />
       {profile?.role === 'LESSOR' && (
-        <SettingsRow icon="car"          label="Lessor Role"    value="Schedule E Active" />
+        <SettingsRow icon="car" label="Lessor Role" value="Schedule E Active" />
       )}
 
       {/* Account settings */}
@@ -327,19 +375,31 @@ export default function ProfileScreen() {
         icon="link"
         label="Sharing Links"
         onPress={() => router.push('/profile/tokens')}
-        value={undefined}
       />
-      <SettingsRow icon="notifications"  label="Push Notifications" toggle={{ value: notificationsOn, onChange: setNotificationsOn }} />
-      <SettingsRow icon="finger-print"   label="Biometric Auth"     toggle={{ value: biometricsOn, onChange: setBiometricsOn }} />
-      <SettingsRow icon="language"       label="Language"           value="English" onPress={() => {}} />
+      <SettingsRow
+        icon="notifications"
+        label="Push Notifications"
+        toggle={{ value: notificationsOn, onChange: handleNotificationsToggle }}
+      />
+      <SettingsRow
+        icon="finger-print"
+        label="Biometric Auth"
+        toggle={{ value: biometricsOn, onChange: handleBiometricsToggle }}
+      />
+      <SettingsRow
+        icon="language"
+        label="Language"
+        value={language}
+        onPress={handleLanguage}
+      />
 
       {/* Legal */}
       <SectionHeader title="Legal & Support" />
-      <SettingsRow icon="shield-checkmark" label="Privacy Policy"   onPress={() => Linking.openURL('https://vecta.io/privacy')} />
-      <SettingsRow icon="document"         label="Terms of Service" onPress={() => Linking.openURL('https://vecta.io/terms')} />
-      <SettingsRow icon="mail"             label="Contact Support"  onPress={() => Linking.openURL('mailto:support@vecta.io')} />
-      <SettingsRow icon="help-circle"      label="F-1 Compliance FAQ" onPress={() => Linking.openURL('https://vecta.io/compliance/f1')} />
-      <SettingsRow icon="document-text"    label="App Version"       value="1.0.0" />
+      <SettingsRow icon="shield-checkmark" label="Privacy Policy"     onPress={() => Linking.openURL('https://vecta.io/privacy')} />
+      <SettingsRow icon="document"         label="Terms of Service"   onPress={() => Linking.openURL('https://vecta.io/terms')} />
+      <SettingsRow icon="mail"             label="Contact Support"    onPress={() => Linking.openURL('mailto:support@vecta.io')} />
+      <SettingsRow icon="help-circle"      label="F-1 Compliance FAQ" onPress={() => Linking.openURL('https://vecta.io/f1-faq')} />
+      <SettingsRow icon="document-text"    label="App Version"        value="1.0.0" />
 
       {/* Sign out */}
       <SectionHeader title="Session" />

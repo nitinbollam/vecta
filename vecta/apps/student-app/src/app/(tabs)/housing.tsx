@@ -11,8 +11,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, TextInput, Alert, Share, Linking,
+  RefreshControl, TextInput, Alert, Share,
 } from 'react-native';
+import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useHousingStore, useStudentStore } from '../../stores';
@@ -111,7 +112,7 @@ function LetterOfCreditPanel() {
         <Text style={locStyles.connectSub}>
           Link your home-country or US bank account to generate a verified Letter of Credit.
         </Text>
-        <TouchableOpacity style={locStyles.connectBtn}>
+        <TouchableOpacity style={locStyles.connectBtn} onPress={() => router.push('/onboarding/plaid-link')}>
           <Text style={locStyles.connectBtnText}>Connect with Plaid</Text>
         </TouchableOpacity>
       </View>

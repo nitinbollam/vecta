@@ -53,7 +53,8 @@ const DISCLAIMER_CLAUSES = [
 ];
 
 export default function VehicleEnrollmentScreen() {
-  const { studentId, accessToken } = useStudentStore();
+  const authToken = useStudentStore((s) => s.authToken);
+  const profile   = useStudentStore((s) => s.profile);
   const [clauses, setClauses] = useState<ConsentClauses>({
     strictlyPassive: false,
     taxClassification: false,
@@ -93,11 +94,11 @@ export default function VehicleEnrollmentScreen() {
                 {
                   method: "POST",
                   headers: {
-                    Authorization: `Bearer ${accessToken}`,
+                    Authorization: `Bearer ${authToken}`,
                     "Content-Type": "application/json",
                   },
                   body: JSON.stringify({
-                    studentId,
+                    studentId: profile?.id,
                     consentClauses: {
                       strictlyPassiveAcknowledged: clauses.strictlyPassive,
                       taxClassificationAcknowledged: clauses.taxClassification,

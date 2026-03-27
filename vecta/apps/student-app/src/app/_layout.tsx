@@ -108,14 +108,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth/login"   options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="(tabs)"       options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding"   options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="mobility"     options={{ headerShown: false }} />
-        <Stack.Screen name="insurance"    options={{ headerShown: false }} />
-        <Stack.Screen name="housing"      options={{ headerShown: false }} />
-        <Stack.Screen name="profile"      options={{ headerShown: false }} />
-        <Stack.Screen name="verify"       options={{ presentation: 'modal' }} />
+        <Stack.Screen name="auth/login"          options={{ gestureEnabled: false }} />
+        <Stack.Screen name="(tabs)"              options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/index"    options={{ gestureEnabled: false }} />
+        <Stack.Screen name="insurance/index"     options={{ headerShown: false }} />
+        <Stack.Screen name="esim/index"          options={{ headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
   );
