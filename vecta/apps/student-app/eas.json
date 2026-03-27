@@ -19,14 +19,14 @@
       "distribution": "internal",
       "env": {
         "NODE_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://api-gateway.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://vecta-elaf.onrender.com/api/v1"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "NODE_ENV": "production",
-        "EXPO_PUBLIC_API_URL": "https://api-gateway.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://vecta-elaf.onrender.com/api/v1"
       }
     }
   },
