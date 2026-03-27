@@ -1,5 +1,14 @@
 node_modules
-.expo
-android
-ios
+.git
 *.log
+*.orig
+.DS_Store
+Thumbs.db
+android/.gradle
+android/build
+ios/Pods
+ios/build
+.expo
+dist
+web-build
+coverage
