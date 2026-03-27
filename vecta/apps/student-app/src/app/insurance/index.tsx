@@ -13,7 +13,14 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
+// expo-document-picker requires a native rebuild — stubbed until new dev build is installed
+const DocumentPicker = {
+  getDocumentAsync: async (_opts?: unknown) => {
+    const { Alert } = require('react-native');
+    Alert.alert('Coming Soon', 'Document upload requires a new app build. Install the latest dev build to use this feature.');
+    return { canceled: true, assets: null };
+  },
+};
 import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import {
