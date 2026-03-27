@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useCallback } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useRootNavigationState } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -80,12 +80,14 @@ function useMagicLinkHandler() {
 
 function useAuthGuard() {
   const authToken = useStudentStore((s) => s.authToken);
+  const navState  = useRootNavigationState();
 
   useEffect(() => {
+    if (!navState?.key) return; // navigator not mounted yet
     if (authToken === null) {
       router.replace('/auth/login');
     }
-  }, [authToken]);
+  }, [authToken, navState?.key]);
 }
 
 // ---------------------------------------------------------------------------
