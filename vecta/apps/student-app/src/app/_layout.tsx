@@ -1,9 +1,13 @@
 /**
- * app/_layout.tsx — Expo Router root layout with auth guard + deep-link handler
+ * app/_layout.tsx — Expo Router root layout with deep-link handler
+ *
+ * Auth is handled declaratively via <Redirect> in (tabs)/_layout.tsx,
+ * NOT with router.replace() in useEffect — that pattern causes infinite
+ * loops because navigation events re-trigger navigation-state-dependent effects.
  */
 
-import { useEffect, useCallback } from 'react';
-import { Stack, router, useRootNavigationState } from 'expo-router';
+import { useEffect, useCallback, useRef } from 'react';
+import { Stack, router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -25,21 +29,21 @@ SplashScreen.preventAutoHideAsync();
 
 // ---------------------------------------------------------------------------
 // Deep-link magic link handler
+// Use selectors so this hook only re-renders when the specific actions change
+// (Zustand actions are stable references — this effectively never re-renders)
 // ---------------------------------------------------------------------------
 
 function useMagicLinkHandler() {
-  const { setAuthToken, fetchProfile } = useStudentStore();
+  const setAuthToken = useStudentStore((s) => s.setAuthToken);
+  const fetchProfile = useStudentStore((s) => s.fetchProfile);
 
   const handleUrl = useCallback(async (url: string) => {
     try {
       const parsed = Linking.parse(url);
-      // vecta://auth/verify?token=xxx&email=yyy
-      // or https://app.vecta.io/auth/verify?token=xxx&email=yyy
       if (!parsed.path?.includes('auth/verify')) return;
 
       const token = parsed.queryParams?.token as string | undefined;
       const email = parsed.queryParams?.email as string | undefined;
-
       if (!token || !email) return;
 
       const res = await fetch(`${API_V1_BASE}/auth/verify`, {
@@ -62,40 +66,26 @@ function useMagicLinkHandler() {
     }
   }, [setAuthToken, fetchProfile]);
 
+  // Stable ref so the event listener always calls the latest handleUrl
+  const handleUrlRef = useRef(handleUrl);
+  useEffect(() => { handleUrlRef.current = handleUrl; }, [handleUrl]);
+
   useEffect(() => {
-    // Handle cold-start deep link
     Linking.getInitialURL().then((url) => {
-      if (url) void handleUrl(url);
+      if (url) void handleUrlRef.current(url);
     });
 
-    // Handle warm-start deep link
-    const sub = Linking.addEventListener('url', ({ url }) => void handleUrl(url));
+    const sub = Linking.addEventListener('url', ({ url }) => void handleUrlRef.current(url));
     return () => sub.remove();
-  }, [handleUrl]);
+  }, []); // Empty deps — subscribe once, use ref for latest handler
 }
 
 // ---------------------------------------------------------------------------
-// Auth guard — redirects unauthenticated users to login
-// ---------------------------------------------------------------------------
-
-function useAuthGuard() {
-  const authToken  = useStudentStore((s) => s.authToken);
-  const navReady   = !!useRootNavigationState()?.key;
-
-  useEffect(() => {
-    if (!navReady) return;
-    if (authToken === null) {
-      router.replace('/auth/login');
-    }
-  }, [authToken, navReady]);
-}
-
-// ---------------------------------------------------------------------------
-// Root layout
+// Root layout — NO imperative auth redirects here
+// Auth guard lives in (tabs)/_layout.tsx as a declarative <Redirect>
 // ---------------------------------------------------------------------------
 
 export default function RootLayout() {
-  useAuthGuard();
   useMagicLinkHandler();
 
   const [fontsLoaded] = useFonts({
@@ -118,9 +108,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
-        {/* Auth */}
         <Stack.Screen name="auth/login"   options={{ headerShown: false, gestureEnabled: false }} />
-        {/* Main app */}
         <Stack.Screen name="(tabs)"       options={{ headerShown: false }} />
         <Stack.Screen name="onboarding"   options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="mobility"     options={{ headerShown: false }} />

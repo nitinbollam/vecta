@@ -27,10 +27,27 @@ import { VectaColors, VectaFonts } from '@/constants/design';
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
-  const { profile, authToken, isLoading: profileLoading, fetchProfile } = useStudentStore();
-  const { balance, isLoading: balanceLoading, fetchBalance } = useBalanceStore();
-  const { trustScore, activeLoC, isLoading: housingLoading, fetchTrustScore } = useHousingStore();
-  const { vehicles, earnings, isLoading: mobilityLoading, fetchVehicles, fetchEarnings } = useMobilityStore();
+  // Selectors: component only re-renders when these specific values change,
+  // not on every isLoading flip from any store.
+  const profile        = useStudentStore((s) => s.profile);
+  const authToken      = useStudentStore((s) => s.authToken);
+  const profileLoading = useStudentStore((s) => s.isLoading);
+  const fetchProfile   = useStudentStore((s) => s.fetchProfile);
+
+  const balance        = useBalanceStore((s) => s.balance);
+  const balanceLoading = useBalanceStore((s) => s.isLoading);
+  const fetchBalance   = useBalanceStore((s) => s.fetchBalance);
+
+  const trustScore     = useHousingStore((s) => s.trustScore);
+  const activeLoC      = useHousingStore((s) => s.activeLoC);
+  const housingLoading = useHousingStore((s) => s.isLoading);
+  const fetchTrustScore = useHousingStore((s) => s.fetchTrustScore);
+
+  const vehicles       = useMobilityStore((s) => s.vehicles);
+  const earnings       = useMobilityStore((s) => s.earnings);
+  const mobilityLoading = useMobilityStore((s) => s.isLoading);
+  const fetchVehicles  = useMobilityStore((s) => s.fetchVehicles);
+  const fetchEarnings  = useMobilityStore((s) => s.fetchEarnings);
 
   const isLoading = profileLoading || balanceLoading;
   const [refreshing, setRefreshing] = React.useState(false);
