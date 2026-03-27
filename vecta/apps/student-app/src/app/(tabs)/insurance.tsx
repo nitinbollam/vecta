@@ -13,14 +13,26 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, Linking, Share, Platform,
+  Alert, ActivityIndicator, Share, Platform,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { useStudentStore } from '../../stores';
 import { API_V1_BASE, COMPLIANCE_AI_BASE } from '../../config/api';
+
+// expo-document-picker requires a native dev build to be compiled in.
+// Use a dynamic require so a missing native module doesn't crash the whole screen.
+type DocPickerResult = { canceled: boolean; assets: Array<{ uri: string; name: string; mimeType?: string }> };
+type DocPickerModule = { getDocumentAsync: (opts: { type: string }) => Promise<DocPickerResult> };
+let DocumentPicker: DocPickerModule | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  DocumentPicker = require('expo-document-picker') as DocPickerModule;
+} catch {
+  DocumentPicker = null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -133,6 +145,15 @@ function UniversityPlanChecker() {
   const [analyzing,   setAnalyzing]   = useState(false);
 
   const handleUpload = useCallback(async () => {
+    if (!DocumentPicker) {
+      Alert.alert(
+        'Build Update Required',
+        'PDF upload requires the latest dev build. Your new EAS build is in progress — check expo.dev for the download link once it completes.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
       if (result.canceled) return;
@@ -158,7 +179,7 @@ function UniversityPlanChecker() {
         const data = await res.json() as PdfAnalysis;
         setPdfAnalysis(data);
       } catch {
-        // Compliance AI offline — use fallback
+        // Compliance AI offline — show fallback analysis
         setPdfAnalysis(FALLBACK_ANALYSIS);
       } finally {
         setAnalyzing(false);

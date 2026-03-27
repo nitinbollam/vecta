@@ -110,11 +110,19 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth/login"          options={{ gestureEnabled: false }} />
-        <Stack.Screen name="(tabs)"              options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding/index"    options={{ gestureEnabled: false }} />
-        <Stack.Screen name="insurance/index"     options={{ headerShown: false }} />
-        <Stack.Screen name="esim/index"          options={{ headerShown: false }} />
+        <Stack.Screen name="auth/login"                  options={{ gestureEnabled: false }} />
+        <Stack.Screen name="(tabs)"                      options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/index"            options={{ gestureEnabled: false }} />
+        <Stack.Screen name="onboarding/passport-scan"   options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/plaid-link"      options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/banking"         options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding/esim"            options={{ headerShown: false }} />
+        <Stack.Screen name="esim/index"                 options={{ headerShown: false }} />
+        <Stack.Screen name="housing/roommate"           options={{ headerShown: false }} />
+        <Stack.Screen name="insurance/index"            options={{ headerShown: false }} />
+        <Stack.Screen name="mobility/enroll"            options={{ headerShown: false }} />
+        <Stack.Screen name="mobility/audit-export"      options={{ headerShown: false }} />
+        <Stack.Screen name="profile/tokens"             options={{ headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
     </ThemeProvider>
