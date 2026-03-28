@@ -70,22 +70,35 @@ export default function DashboardScreen() {
 
   const handleShareVectaID = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      if (!authToken) {
-        Alert.alert('Error', 'Please sign in to share your Vecta ID.');
-        return;
-      }
-      const res  = await fetch(`${API_V1_BASE}/identity/token/mint`, {
-        method:  'POST',
-        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-      });
-      const data = await res.json() as { url?: string; token?: string };
-      const url  = data.url ?? (data.token ? `https://verify.vecta.io/verify/${data.token}` : null);
-      if (!url) throw new Error('No verification URL returned');
-      await Share.share({ message: url, url });
-    } catch {
-      Alert.alert('Error', 'Could not generate verification link. Please try again.');
-    }
+    Alert.alert(
+      'Share Vecta ID',
+      'Choose what to share with your landlord',
+      [
+        {
+          text: 'Share Verification Link',
+          onPress: async () => {
+            try {
+              if (!authToken) { Alert.alert('Error', 'Please sign in first.'); return; }
+              const res  = await fetch(`${API_V1_BASE}/identity/token/mint`, {
+                method:  'POST',
+                headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+              });
+              const data = await res.json() as { url?: string; token?: string };
+              const url  = data.url ?? (data.token ? `https://verify.vecta.io/verify/${data.token}` : null);
+              if (!url) throw new Error('No URL');
+              await Share.share({ message: url, url });
+            } catch {
+              Alert.alert('Error', 'Could not generate verification link. Please try again.');
+            }
+          },
+        },
+        {
+          text: 'Share Vecta ID Card',
+          onPress: () => router.push('/profile/vecta-id'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   };
 
   const handleEnrollVehicle = async () => {

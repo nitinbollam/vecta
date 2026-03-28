@@ -123,6 +123,7 @@ export default function RootLayout() {
         <Stack.Screen name="mobility/enroll"            options={{ headerShown: false }} />
         <Stack.Screen name="mobility/audit-export"      options={{ headerShown: false }} />
         <Stack.Screen name="profile/tokens"             options={{ headerShown: false }} />
+        <Stack.Screen name="profile/vecta-id"           options={{ headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
     </ThemeProvider>

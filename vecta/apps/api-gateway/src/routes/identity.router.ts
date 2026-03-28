@@ -257,4 +257,248 @@ router.post('/push-token', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
+// ---------------------------------------------------------------------------
+// Generate Vecta ID Card
+// POST /api/v1/identity/generate-id-card
+// ---------------------------------------------------------------------------
+
+router.post(
+  '/generate-id-card',
+  authMiddleware,
+  requireKYC('APPROVED'),
+  async (req: Request, res: Response) => {
+    try {
+      const studentId = req.vectaUser!.sub;
+      const { getPool } = await import('@vecta/database');
+      const db = getPool();
+
+      // Fetch student data
+      const { rows } = await db.query(
+        `SELECT s.id, s.full_name, s.university_name, s.program_of_study,
+                s.visa_type, s.visa_expiry_year, s.kyc_status,
+                s.vecta_id_number, s.id_card_pdf_url, s.id_card_front_url,
+                s.id_card_issued_at
+         FROM students s WHERE s.id = $1`,
+        [studentId],
+      );
+
+      if (!rows[0]) {
+        res.status(404).json({ error: 'STUDENT_NOT_FOUND' });
+        return;
+      }
+
+      const student = rows[0] as {
+        id: string; full_name: string; university_name: string;
+        program_of_study: string; visa_type: string; visa_expiry_year: number;
+        kyc_status: string; vecta_id_number: string | null;
+        id_card_pdf_url: string | null; id_card_front_url: string | null;
+        id_card_issued_at: string | null;
+      };
+
+      // Generate a new VID number if needed
+      const { generateVectaIDNumber, generateVectaIDCard } =
+        await import('../../../../services/identity-service/src/vecta-id-card.service');
+
+      const vectaIdNumber = student.vecta_id_number
+        ?? await generateVectaIDNumber(db);
+
+      const issuedAt  = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+      // Fetch biometric photo if available (from KYC record)
+      let photoBase64 = '';
+      try {
+        const photoRow = await db.query(
+          `SELECT biometric_photo_hash FROM kyc_records WHERE student_id = $1
+           ORDER BY created_at DESC LIMIT 1`,
+          [studentId],
+        );
+        // Photo hash only — actual photo fetched from vault if stored
+        photoBase64 = photoRow.rows[0]?.biometric_photo_hash ?? '';
+      } catch { /* non-critical */ }
+
+      const cardData = {
+        studentId,
+        vectaIdNumber,
+        legalName:      student.full_name,
+        university:     student.university_name,
+        programOfStudy: student.program_of_study,
+        visaType:       student.visa_type ?? 'F-1',
+        visaExpiryYear: student.visa_expiry_year,
+        issuedAt,
+        expiresAt,
+        photoBase64,
+        verificationUrl: `https://verify.vecta.io/id/${vectaIdNumber}`,
+        nfcVerified:     student.kyc_status === 'APPROVED',
+        kycStatus:       student.kyc_status,
+      };
+
+      const result = await generateVectaIDCard(cardData);
+
+      // Persist URLs and VID number
+      await db.query(
+        `UPDATE students SET
+           vecta_id_number    = $1,
+           id_card_pdf_url    = $2,
+           id_card_front_url  = $3,
+           id_card_back_url   = $4,
+           id_card_issued_at  = $5,
+           id_card_expires_at = $6
+         WHERE id = $7`,
+        [
+          vectaIdNumber,
+          result.s3PdfUrl,
+          result.s3FrontUrl,
+          result.s3BackUrl,
+          issuedAt,
+          expiresAt,
+          studentId,
+        ],
+      );
+
+      logger.info({ studentId, vectaIdNumber }, 'Vecta ID card generated and saved');
+
+      res.status(201).json({
+        pdfUrl:        result.s3PdfUrl,
+        frontUrl:      result.s3FrontUrl,
+        backUrl:       result.s3BackUrl,
+        vectaIdNumber,
+        issuedAt,
+        expiresAt,
+      });
+    } catch (err) {
+      logger.error({ err }, '[VectaIDCard] Generation failed');
+      res.status(500).json({ error: 'ID_CARD_GENERATION_FAILED' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Get existing ID card
+// GET /api/v1/identity/id-card
+// ---------------------------------------------------------------------------
+
+router.get('/id-card', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser!.sub;
+    const { getPool } = await import('@vecta/database');
+    const { rows } = await getPool().query(
+      `SELECT vecta_id_number, id_card_pdf_url, id_card_front_url,
+              id_card_back_url, id_card_issued_at, id_card_expires_at, kyc_status
+       FROM students WHERE id = $1`,
+      [studentId],
+    );
+
+    if (!rows[0] || !rows[0].id_card_pdf_url) {
+      res.json({
+        exists:     false,
+        kycStatus:  rows[0]?.kyc_status ?? 'PENDING',
+      });
+      return;
+    }
+
+    const s = rows[0] as {
+      vecta_id_number: string; id_card_pdf_url: string;
+      id_card_front_url: string; id_card_back_url: string;
+      id_card_issued_at: string; id_card_expires_at: string;
+      kyc_status: string;
+    };
+
+    const now     = new Date();
+    const expires = new Date(s.id_card_expires_at);
+    const status  = expires < now ? 'EXPIRED' : 'ACTIVE';
+
+    res.json({
+      exists:         true,
+      vectaIdNumber:  s.vecta_id_number,
+      pdfUrl:         s.id_card_pdf_url,
+      frontUrl:       s.id_card_front_url,
+      backUrl:        s.id_card_back_url,
+      issuedAt:       s.id_card_issued_at,
+      expiresAt:      s.id_card_expires_at,
+      status,
+      kycStatus:      s.kyc_status,
+      verificationUrl: `https://verify.vecta.io/id/${s.vecta_id_number}`,
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to fetch ID card');
+    res.status(500).json({ error: 'ID_CARD_FETCH_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Public verify endpoint — zero-knowledge facts only (NO auth required)
+// GET /api/v1/identity/verify/:vectaIdNumber
+// ---------------------------------------------------------------------------
+
+router.get('/verify/:vectaIdNumber', async (req: Request, res: Response) => {
+  try {
+    const { vectaIdNumber } = req.params;
+
+    // Strict format: VID-XXXX-XXXX-XXXX
+    if (!/^VID-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(vectaIdNumber)) {
+      res.status(400).json({ valid: false, error: 'INVALID_FORMAT' });
+      return;
+    }
+
+    const { getPool } = await import('@vecta/database');
+    const db = getPool();
+    const { rows } = await db.query(
+      `SELECT s.full_name, s.university_name, s.visa_type, s.visa_expiry_year,
+              s.kyc_status, s.id_card_issued_at, s.id_card_expires_at,
+              s.id_card_front_url, s.id,
+              CASE WHEN k.id IS NOT NULL THEN true ELSE false END AS nfc_verified
+       FROM students s
+       LEFT JOIN kyc_records k ON k.student_id = s.id AND k.status = 'APPROVED'
+       WHERE s.vecta_id_number = $1`,
+      [vectaIdNumber],
+    );
+
+    if (!rows[0] || !rows[0].id_card_issued_at) {
+      res.status(404).json({ valid: false, error: 'NOT_FOUND' });
+      return;
+    }
+
+    const s = rows[0] as {
+      full_name: string; university_name: string; visa_type: string;
+      visa_expiry_year: number; kyc_status: string;
+      id_card_issued_at: string; id_card_expires_at: string;
+      id_card_front_url: string; id: string; nfc_verified: boolean;
+    };
+
+    const expired = new Date(s.id_card_expires_at) < new Date();
+    const valid   = !expired && s.kyc_status === 'APPROVED';
+
+    // Log verification
+    await db.query(
+      `INSERT INTO vecta_id_verifications
+         (student_id, vecta_id_number, verified_by_ip, result, user_agent)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        s.id,
+        vectaIdNumber,
+        req.ip ?? 'unknown',
+        valid ? 'VALID' : 'EXPIRED',
+        req.headers['user-agent'] ?? 'unknown',
+      ],
+    ).catch(() => { /* non-critical */ });
+
+    res.json({
+      valid,
+      name:          s.full_name,
+      university:    s.university_name,
+      visaStatus:    s.kyc_status === 'APPROVED' ? 'F-1 ACTIVE' : 'PENDING',
+      visaExpiryYear: s.visa_expiry_year,
+      nfcVerified:   s.nfc_verified,
+      issuedAt:      s.id_card_issued_at,
+      expiresAt:     s.id_card_expires_at,
+      frontImageUrl: s.id_card_front_url,
+      // intentionally omitted: passport number, DOB, nationality, balance
+    });
+  } catch (err) {
+    logger.error({ err }, 'Public verify failed');
+    res.status(500).json({ valid: false, error: 'VERIFY_FAILED' });
+  }
+});
+
 export { router as identityRouter };

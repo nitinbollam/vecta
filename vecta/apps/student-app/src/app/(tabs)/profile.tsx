@@ -20,6 +20,89 @@ import {
 import { VectaIDStatusBadge, VectaBadge } from '../../components/ui';
 
 // ---------------------------------------------------------------------------
+// Mini Vecta ID card preview (tappable, shown above Platform Status)
+// ---------------------------------------------------------------------------
+
+function VectaIDCardPreview() {
+  const { colors }       = useTheme();
+  const { profile, authToken } = useStudentStore();
+  const [cardData, setCardData] = React.useState<{
+    frontUrl?: string; vectaIdNumber?: string; status?: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (!authToken) return;
+    fetch(`${require('../../config/api').API_V1_BASE}/identity/id-card`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then(r => r.json())
+      .then((d: { exists: boolean; frontUrl?: string; vectaIdNumber?: string; status?: string }) => {
+        if (d.exists) setCardData(d);
+      })
+      .catch(() => {});
+  }, [authToken]);
+
+  const screenW = require('react-native').Dimensions.get('window').width;
+  const cardW   = screenW * 0.8;
+  const cardH   = cardW / 1.586;
+
+  return (
+    <TouchableOpacity
+      onPress={() => router.push('/profile/vecta-id')}
+      activeOpacity={0.88}
+      style={previewStyle.wrapper}
+    >
+      <View style={[previewStyle.cardShell, { width: cardW, height: cardH, shadowColor: '#00E6CC' }]}>
+        {cardData?.frontUrl ? (
+          <Image source={{ uri: cardData.frontUrl }} style={{ width: cardW, height: cardH, borderRadius: 12 }} />
+        ) : (
+          <LinearGradient colors={['#001F3F', '#001A33']} style={[previewStyle.placeholder, { width: cardW, height: cardH }]}>
+            <Ionicons name="shield-checkmark-outline" size={36} color="#00E6CC" />
+            <Text style={previewStyle.placeholderText}>
+              {profile?.kycStatus === 'APPROVED' ? 'Tap to generate your card' : 'Complete KYC to get your card'}
+            </Text>
+          </LinearGradient>
+        )}
+
+        {/* Name overlay */}
+        {profile?.fullName && (
+          <View style={previewStyle.nameOverlay}>
+            <Text style={previewStyle.nameText} numberOfLines={1}>{profile.fullName}</Text>
+            {cardData?.vectaIdNumber && (
+              <Text style={previewStyle.vidText}>
+                {cardData.vectaIdNumber.split('-').slice(-1)[0]}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* VERIFIED badge */}
+        {profile?.vectaIdStatus === 'VERIFIED' && (
+          <View style={previewStyle.verifiedBadge}>
+            <Text style={previewStyle.verifiedText}>VERIFIED</Text>
+          </View>
+        )}
+      </View>
+
+      <Text style={[previewStyle.viewLink, { color: '#00E6CC' }]}>View Full Card →</Text>
+    </TouchableOpacity>
+  );
+}
+
+const previewStyle = StyleSheet.create({
+  wrapper:        { alignItems: 'center', marginHorizontal: VectaSpacing['4'], marginBottom: VectaSpacing['4'] },
+  cardShell:      { borderRadius: 12, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10, overflow: 'hidden' },
+  placeholder:    { borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  placeholderText:{ color: 'rgba(255,255,255,0.7)', fontSize: 12, textAlign: 'center', paddingHorizontal: 16 },
+  nameOverlay:    { position: 'absolute', bottom: 10, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  nameText:       { color: '#FFF', fontSize: 11, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4, flex: 1 },
+  vidText:        { color: 'rgba(0,230,204,0.9)', fontSize: 10, fontFamily: 'Courier', marginLeft: 8 },
+  verifiedBadge:  { position: 'absolute', top: 10, right: 10, backgroundColor: '#00C896', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  verifiedText:   { color: '#FFF', fontSize: 9, fontWeight: '800' },
+  viewLink:       { marginTop: 8, fontSize: 13, fontWeight: '600' },
+});
+
+// ---------------------------------------------------------------------------
 // Profile hero
 // ---------------------------------------------------------------------------
 
@@ -79,20 +162,38 @@ function ShareVectaID() {
   const { profile, mintVectaIdToken } = useStudentStore();
   const [minting, setMinting] = useState(false);
 
-  const handleShare = useCallback(async () => {
-    if (!profile?.vectaIdToken) {
-      setMinting(true);
-      await mintVectaIdToken();
-      setMinting(false);
-    }
-    if (profile?.vectaIdToken) {
-      const verifyUrl = `https://verify.vecta.io/verify/${profile.vectaIdToken}`;
-      await Share.share({
-        url:     verifyUrl,
-        title:   'My Vecta Verified Identity',
-        message: `Verify my identity and financial standing at: ${verifyUrl}`,
-      });
-    }
+  const handleShare = useCallback(() => {
+    Alert.alert(
+      'Share Vecta ID',
+      'Choose what to share',
+      [
+        {
+          text: 'Share Verification Link',
+          onPress: async () => {
+            if (!profile?.vectaIdToken) {
+              setMinting(true);
+              await mintVectaIdToken();
+              setMinting(false);
+            }
+            if (profile?.vectaIdToken) {
+              const verifyUrl = `https://verify.vecta.io/verify/${profile.vectaIdToken}`;
+              await Share.share({
+                url:     verifyUrl,
+                title:   'My Vecta Verified Identity',
+                message: `Verify my identity and financial standing at: ${verifyUrl}`,
+              });
+            }
+          },
+        },
+        {
+          text: 'Share Vecta ID Card',
+          onPress: async () => {
+            router.push('/profile/vecta-id');
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   }, [profile, mintVectaIdToken]);
 
   if (profile?.vectaIdStatus !== 'VERIFIED') return null;
@@ -379,6 +480,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.surface1 }} showsVerticalScrollIndicator={false}>
       <ProfileHero />
+      <VectaIDCardPreview />
       <ShareVectaID />
       <ModuleHealth />
 
