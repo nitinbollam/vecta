@@ -191,6 +191,20 @@ export async function closePool(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Vertical Fortress migration notes
+// ---------------------------------------------------------------------------
+// Run new migrations in order (idempotent — uses IF NOT EXISTS throughout):
+//   psql $DATABASE_URL -f packages/database/migrations/005_vecta_ledger.sql
+//   psql $DATABASE_URL -f packages/database/migrations/006_vecta_insurance.sql
+//
+// Or run all migrations in sequence:
+//   for f in packages/database/migrations/*.sql; do psql $DATABASE_URL -f $f; done
+//
+// Migration 005 adds: ledger_accounts, ledger_entries, virtual_cards, ach_transfers
+// Migration 006 adds: insurance_quotes, insurance_policies, insurance_claims,
+//                     insurance_premium_payments
+
+// ---------------------------------------------------------------------------
 // Migration 002 — student_plaid_connections (missing from original schema)
 // ---------------------------------------------------------------------------
 // Run via: psql $DATABASE_URL -f packages/database/migrations/002_plaid_connections.sql

@@ -87,6 +87,23 @@ export interface BankDataCapabilities {
 // ---------------------------------------------------------------------------
 
 export const BANKING_CAPABILITIES: Record<string, BankingCapabilities> = {
+  // ── Vertical Fortress: VectaLedger (in-house, best capabilities) ──────────
+  'vecta-ledger': {
+    provisionWithoutSSN:      true,
+    routingNumberImmediate:   true,    // generated immediately, no KYC wait
+    cardIssuanceIncluded:     true,
+    cardDeliveryDays:         0,       // virtual card, instant
+    kycViaPassport:           true,    // NFC ICAO 9303 verified by VectaID
+    kycSyncStatus:            true,    // sync — result in provisioning response
+    kycWebhookEvent:          'LEDGER_ACCOUNT_CREATED',
+    kycApprovedWebhookStatus: 'ACTIVE',
+    maxDailyTransferUsd:      10_000,
+    maxBalanceUsd:            500_000,
+    internationalWireSupport: false,   // ACH only in v1; SWIFT in v2
+    bsaReportingBuiltIn:      false,   // ⚠️  file via Column Bank partnership
+    fdicInsured:              true,    // via Column Bank sponsorship
+    fdicLimit:                250_000,
+  },
   'Unit.co': {
     provisionWithoutSSN:      true,
     routingNumberImmediate:   true,
@@ -122,6 +139,22 @@ export const BANKING_CAPABILITIES: Record<string, BankingCapabilities> = {
 };
 
 export const IDENTITY_CAPABILITIES: Record<string, IdentityCapabilities> = {
+  // ── Vertical Fortress: VectaID (in-house, ICAO 9303 NFC, no external API) ──
+  'vecta-id': {
+    nfcPassportSupport:    true,
+    livenessCheckIncluded: true,
+    facialMatchIncluded:   true,
+    webhookEvent:          'VECTA_ID_VERIFY_ATTEMPT',   // internal audit event
+    approvedWebhookStatus: 'APPROVED',
+    sdkType:               'native_sdk',
+    documentTypes:         ['passport'],
+    // Extended capabilities (not on IdentityCapabilities interface — documented here):
+    // csca_verification:         true,   // verifies gov cert chain via CSCA registry
+    // liveness_challenge_response: true, // blink/smile/turn challenges, not static
+    // active_authentication:     true,   // proves chip is not cloned
+    // passive_authentication:    true,   // hash chain verification
+    // offline_capable:           true,   // NFC read works without internet
+  },
   'Didit': {
     nfcPassportSupport:    true,
     livenessCheckIncluded: true,
@@ -143,6 +176,18 @@ export const IDENTITY_CAPABILITIES: Record<string, IdentityCapabilities> = {
 };
 
 export const BANK_DATA_CAPABILITIES: Record<string, BankDataCapabilities> = {
+  // ── Vertical Fortress: VectaConnect (Open Banking, multi-country) ──────────
+  'vecta-connect': {
+    internationalBankSupport: true,    // India AA, UK OB, EU PSD2, US OAuth
+    assetReportAvailable:     true,
+    assetReportPollRequired:  false,   // real-time via AA framework
+    webhookReadyEvent:        'BANK_CONNECTED',
+    transactionHistoryDays:   90,
+    // Extended capabilities:
+    // open_banking_direct:    true,  // AA/OB/PSD2, not screen scraping
+    // aa_framework:           true,  // India's RBI Account Aggregator
+    // free_tier_india:        true,  // $0/connection for Indian banks
+  },
   'Plaid': {
     internationalBankSupport: false,     // ⚠️ US/Canada/UK only for Assets
     assetReportAvailable:     true,

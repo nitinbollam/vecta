@@ -3,7 +3,14 @@
  *
  * Provider registry with automatic failover.
  *
- * Configuration is purely through environment variables:
+ * ── Vertical Fortress defaults (in-house first) ──────────────────────────────
+ *   IDENTITY_PROVIDER=vecta-id     → VectaID (ICAO NFC)   → fallback: didit
+ *   BANKING_PROVIDER=vecta-ledger  → VectaLedger          → fallback: unit
+ *   BANK_DATA_PROVIDER=vecta-connect→VectaConnect (OB)    → fallback: plaid
+ *   CREDIT_PROVIDER=vecta-bridge   → VectaCreditBridge    → fallback: nova
+ *   INSURANCE_PROVIDER=vecta-mga   → VectaMGA             → fallback: lemonade
+ *
+ * ── Legacy defaults (main branch) ───────────────────────────────────────────
  *   BANKING_PROVIDER=unit          → uses UnitProvider
  *   BANKING_PROVIDER=stripe        → uses StripeProvider (standby)
  *   IDENTITY_PROVIDER=didit        → uses DiditProvider
@@ -34,9 +41,12 @@ const logger = createLogger('provider-registry');
 // Provider adapters (thin wrappers that implement the interface)
 // ---------------------------------------------------------------------------
 
-/** Banking: Unit.co → Stripe Treasury */
+/** Banking: VectaLedger → Unit.co → Stripe Treasury */
 function makeBankingProvider(name: string): BankingProvider {
   switch (name) {
+    case 'vecta-ledger':
+      // VectaLedger implements a compatible subset of BankingProvider
+      return new (require('./adapters/vecta-ledger.adapter').VectaLedgerAdapter)();
     case 'unit':
       return new (require('./adapters/unit.adapter').UnitAdapter)();
     case 'stripe':
@@ -46,9 +56,12 @@ function makeBankingProvider(name: string): BankingProvider {
   }
 }
 
-/** Identity: Didit → Persona */
+/** Identity: VectaID → Didit → Persona */
 function makeIdentityProvider(name: string): IdentityProvider {
   switch (name) {
+    case 'vecta-id':
+      // VectaID NFC pipeline — no external API dependency
+      return new (require('./adapters/vecta-id.adapter').VectaIDAdapter)();
     case 'didit':
       return new (require('./adapters/didit.adapter').DiditAdapter)();
     case 'persona':
@@ -58,9 +71,11 @@ function makeIdentityProvider(name: string): IdentityProvider {
   }
 }
 
-/** Bank data: Plaid → MX */
+/** Bank data: VectaConnect → Plaid → MX */
 function makeBankDataProvider(name: string): BankDataProvider {
   switch (name) {
+    case 'vecta-connect':
+      return new (require('./adapters/vecta-connect.adapter').VectaConnectAdapter)();
     case 'plaid':
       return new (require('./adapters/plaid.adapter').PlaidAdapter)();
     case 'mx':
@@ -70,9 +85,11 @@ function makeBankDataProvider(name: string): BankDataProvider {
   }
 }
 
-/** Credit: Nova Credit → Fairplay */
+/** Credit: VectaBridge → Nova Credit → Fairplay */
 function makeCreditProvider(name: string): CreditProvider {
   switch (name) {
+    case 'vecta-bridge':
+      return new (require('./adapters/vecta-bridge.adapter').VectaBridgeAdapter)();
     case 'nova':
       return new (require('./adapters/nova-credit.adapter').NovaCreditAdapter)();
     case 'fairplay':
@@ -144,16 +161,18 @@ let _registry: ProviderRegistry | null = null;
 export function getProviderRegistry(): ProviderRegistry {
   if (_registry) return _registry;
 
-  const bankingName  = process.env.BANKING_PROVIDER   ?? 'unit';
-  const identityName = process.env.IDENTITY_PROVIDER  ?? 'didit';
-  const bankDataName = process.env.BANK_DATA_PROVIDER ?? 'plaid';
-  const creditName   = process.env.CREDIT_PROVIDER    ?? 'nova';
+  // Vertical Fortress: in-house providers are the new defaults
+  const bankingName  = process.env.BANKING_PROVIDER   ?? 'vecta-ledger';
+  const identityName = process.env.IDENTITY_PROVIDER  ?? 'vecta-id';
+  const bankDataName = process.env.BANK_DATA_PROVIDER ?? 'vecta-connect';
+  const creditName   = process.env.CREDIT_PROVIDER    ?? 'vecta-bridge';
   const esimName     = process.env.ESIM_PROVIDER      ?? 'esimgo';
 
-  const bankingFallbackName  = process.env.BANKING_PROVIDER_FALLBACK   ?? 'stripe';
-  const identityFallbackName = process.env.IDENTITY_PROVIDER_FALLBACK  ?? 'persona';
-  const bankDataFallbackName = process.env.BANK_DATA_PROVIDER_FALLBACK ?? 'mx';
-  const creditFallbackName   = process.env.CREDIT_PROVIDER_FALLBACK    ?? 'fairplay';
+  // Fallbacks: legacy external APIs
+  const bankingFallbackName  = process.env.BANKING_PROVIDER_FALLBACK   ?? 'unit';
+  const identityFallbackName = process.env.IDENTITY_PROVIDER_FALLBACK  ?? 'didit';
+  const bankDataFallbackName = process.env.BANK_DATA_PROVIDER_FALLBACK ?? 'plaid';
+  const creditFallbackName   = process.env.CREDIT_PROVIDER_FALLBACK    ?? 'nova';
   const esimFallbackName     = process.env.ESIM_PROVIDER_FALLBACK      ?? 'alosim';
 
   // Lazy-load adapters so startup doesn't fail if a fallback SDK isn't installed

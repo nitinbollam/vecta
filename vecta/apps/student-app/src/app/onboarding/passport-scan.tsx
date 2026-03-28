@@ -1,259 +1,336 @@
 /**
- * onboarding/passport-scan.tsx — Didit NFC Passport Scan Screen
+ * app/onboarding/passport-scan.tsx
+ *
+ * Vecta In-house NFC Passport Verification Screen
+ * Replaces the Didit SDK redirect with our own ICAO 9303 pipeline.
  *
  * Flow:
- *   IDLE → tap "Start Scan" → SDK opens → SCANNING →
- *   server-side webhook processes result → APPROVED / FAILED
- *
- * The Didit SDK handles the actual NFC tap UI — this screen shows
- * the pre-scan briefing, real-time status polling, and result state.
+ *   1. MRZ Scanner — camera overlay with MRZ zone highlighted
+ *   2. NFC prompt — "Tap back of passport to phone"
+ *   3. Chip read progress
+ *   4. Liveness challenges
+ *   5. Result
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, ScrollView,
+  Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
-import {
-  VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
-} from '../../constants/theme';
 import { API_V1_BASE } from '../../config/api';
+import { useTheme } from '../../context/ThemeContext';
+import {
+  VectaIDService,
+  type VerificationStep,
+  type VectaIDResult,
+} from '../../services/nfc/VectaIDService';
+import { LivenessDetector } from '../../services/nfc/LivenessDetector';
 
 // ---------------------------------------------------------------------------
-// Types
+// Step definitions
 // ---------------------------------------------------------------------------
 
-type ScanState = 'idle' | 'initiating' | 'scanning' | 'processing' | 'approved' | 'failed';
+interface StepDef {
+  key:         VerificationStep;
+  label:       string;
+  description: string;
+  icon:        string;
+}
+
+const STEPS: StepDef[] = [
+  { key: 'MRZ_SCANNING',    label: 'Scan Passport',  description: 'Align the bottom of your passport in the frame', icon: 'scan' },
+  { key: 'MRZ_DETECTED',    label: 'Passport Found', description: 'Hold steady — reading passport data',           icon: 'checkmark-circle' },
+  { key: 'NFC_WAITING',     label: 'Tap Chip',       description: 'Hold the back of your passport to your phone', icon: 'wifi' },
+  { key: 'NFC_READING_DG1', label: 'Reading Chip',   description: 'Reading identity data…',                       icon: 'document-text' },
+  { key: 'NFC_READING_DG2', label: 'Reading Chip',   description: 'Reading biometric photo…',                    icon: 'person' },
+  { key: 'NFC_READING_SOD', label: 'Reading Chip',   description: 'Reading security certificate…',               icon: 'shield' },
+  { key: 'PASSIVE_AUTH',    label: 'Verifying',      description: 'Verifying chip signature…',                   icon: 'lock-closed' },
+  { key: 'ACTIVE_AUTH',     label: 'Verifying',      description: 'Confirming chip is genuine…',                 icon: 'key' },
+  { key: 'LIVENESS_BLINK',  label: 'Liveness',       description: 'Please BLINK both eyes slowly',              icon: 'eye' },
+  { key: 'LIVENESS_SMILE',  label: 'Liveness',       description: 'Please SMILE',                               icon: 'happy' },
+  { key: 'LIVENESS_TURN_LEFT',  label: 'Liveness',   description: 'Turn your head SLOWLY TO THE LEFT',          icon: 'arrow-back' },
+  { key: 'LIVENESS_TURN_RIGHT', label: 'Liveness',   description: 'Turn your head SLOWLY TO THE RIGHT',         icon: 'arrow-forward' },
+  { key: 'FACE_MATCH',      label: 'Face Match',     description: 'Comparing with passport photo…',             icon: 'people' },
+  { key: 'COMPLETE',        label: 'Verified',       description: 'Identity verified successfully',             icon: 'checkmark-circle' },
+  { key: 'FAILED',          label: 'Failed',         description: 'Verification failed — please retry',         icon: 'close-circle' },
+];
 
 // ---------------------------------------------------------------------------
-// Step instructions
+// Result display component
 // ---------------------------------------------------------------------------
 
-const SCAN_STEPS = [
-  { icon: 'book', title: 'Have your passport ready', detail: 'Open to the photo page — the NFC chip is inside.' },
-  { icon: 'phone-portrait', title: 'Place passport on phone', detail: 'Hold the back of your phone flat against the data page for 5–10 seconds.' },
-  { icon: 'eye', title: 'Complete liveness check', detail: "You'll be prompted to blink or turn your head. This prevents spoofing." },
-  { icon: 'shield-checkmark', title: 'Biometric match', detail: 'Your passport photo is compared to the liveness capture. 90%+ match required.' },
-] as const;
+function VerificationResult({ result, onRetry }: {
+  result: VectaIDResult;
+  onRetry: () => void;
+}) {
+  const { colors } = useTheme();
+
+  if (!result.success) {
+    return (
+      <View style={[res.card, { backgroundColor: colors.surface1 }]}>
+        <Ionicons name="close-circle" size={64} color="#EF4444" />
+        <Text style={[res.title, { color: colors.text }]}>Verification Failed</Text>
+        <Text style={[res.reason, { color: colors.textSecondary }]}>{result.error ?? 'Unknown error'}</Text>
+        <View style={res.checks}>
+          <CheckItem label="NFC Chip"      passed={result.chipAuthenticated} />
+          <CheckItem label="Chip Signature" passed={result.passiveAuthPassed} />
+          <CheckItem label="Anti-Clone"    passed={result.activeAuthPassed} />
+          <CheckItem label="Liveness"      passed={result.livenessScore >= 0.92} />
+          <CheckItem label="Face Match"    passed={result.facialMatchScore >= 0.90} />
+        </View>
+        <TouchableOpacity onPress={onRetry} style={res.retryBtn}>
+          <Text style={res.retryText}>Try Again</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[res.card, { backgroundColor: colors.surface1 }]}>
+      <Ionicons name="shield-checkmark" size={64} color="#00E6CC" />
+      <Text style={[res.title, { color: colors.text }]}>Identity Verified</Text>
+      <Text style={[res.subtitle, { color: colors.textSecondary }]}>
+        Your passport has been verified using NFC chip technology
+      </Text>
+      <View style={res.checks}>
+        <CheckItem label="NFC Chip Authenticated" passed={true} />
+        <CheckItem label="Chip Signature Valid"   passed={true} />
+        <CheckItem label="Anti-Clone Check"       passed={true} />
+        <CheckItem label={`Liveness ${(result.livenessScore * 100).toFixed(0)}%`} passed={true} />
+        <CheckItem label={`Face Match ${(result.facialMatchScore * 100).toFixed(0)}%`} passed={true} />
+      </View>
+    </View>
+  );
+}
+
+function CheckItem({ label, passed }: { label: string; passed: boolean }) {
+  const { colors } = useTheme();
+  return (
+    <View style={res.checkRow}>
+      <Ionicons
+        name={passed ? 'checkmark-circle' : 'close-circle'}
+        size={20}
+        color={passed ? '#00C896' : '#EF4444'}
+      />
+      <Text style={[res.checkLabel, { color: colors.text }]}>{label}</Text>
+    </View>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
 
 export default function PassportScanScreen() {
-  const { profile, authToken, fetchProfile } = useStudentStore();
-  const [scanState, setScanState]   = useState<ScanState>('idle');
-  const [sessionId, setSessionId]   = useState<string | null>(null);
-  const [pollCount, setPollCount]   = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { colors }      = useTheme();
+  const authToken       = useStudentStore((s) => s.authToken);
+  const fetchProfile    = useStudentStore((s) => s.fetchProfile);
 
-  // If already verified, skip ahead
-  useEffect(() => {
-    if (profile?.kycStatus === 'APPROVED') {
-      router.replace('/onboarding/banking');
-    }
-  }, [profile?.kycStatus]);
+  const [currentStep,   setCurrentStep]   = useState<VerificationStep>('IDLE');
+  const [progress,      setProgress]      = useState(0);
+  const [result,        setResult]        = useState<VectaIDResult | null>(null);
+  const [isRunning,     setIsRunning]     = useState(false);
+  const [submitting,    setSubmitting]    = useState(false);
 
-  // Poll session status after scan initiated
-  useEffect(() => {
-    if (scanState !== 'scanning' && scanState !== 'processing') {
-      if (pollRef.current) clearInterval(pollRef.current);
-      return;
-    }
+  const stepDef = STEPS.find(s => s.key === currentStep) ?? STEPS[0];
 
-    pollRef.current = setInterval(async () => {
-      if (!sessionId || !authToken) return;
+  const handleStep = useCallback((step: VerificationStep, prog: number) => {
+    setCurrentStep(step);
+    setProgress(prog);
+  }, []);
 
-      try {
-        const res = await fetch(`${API_V1_BASE}/identity/verify/${sessionId}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        const data = await res.json() as { status: string; kycStatus?: string };
+  // ---------------------------------------------------------------------------
+  // Start verification
+  // ---------------------------------------------------------------------------
 
-        setPollCount((c) => c + 1);
+  const handleStart = useCallback(async () => {
+    setIsRunning(true);
+    setResult(null);
+    setCurrentStep('MRZ_SCANNING');
 
-        if (data.kycStatus === 'APPROVED') {
-          clearInterval(pollRef.current!);
-          setScanState('approved');
-          await fetchProfile();
-          setTimeout(() => router.replace('/onboarding/banking'), 1500);
-        } else if (data.kycStatus === 'REJECTED' || data.status === 'failed') {
-          clearInterval(pollRef.current!);
-          setScanState('failed');
-        }
-      } catch { /* poll again next interval */ }
-    }, 2500);
-
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [scanState, sessionId, authToken, fetchProfile]);
-
-  const handleStartScan = useCallback(async () => {
-    if (!authToken || !profile?.id) return;
-
-    setScanState('initiating');
     try {
-      const res = await fetch(`${API_V1_BASE}/identity/verify/initiate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: profile.id }),
-      });
-      const data = await res.json() as { sessionId: string; sdkToken: string };
+      // In production: MRZ is extracted by the camera overlay component
+      // and passed to VectaIDService. For scaffold, we show the camera
+      // and wait for the user to position the passport.
 
-      setSessionId(data.sessionId);
-      setScanState('scanning');
-
-      // In production: DiditSDK.startVerification(data.sdkToken)
-      // For now, transition to processing state to simulate
-      setTimeout(() => setScanState('processing'), 3000);
+      // Simulate MRZ capture prompt (real implementation uses expo-camera + ML Kit OCR)
+      Alert.alert(
+        'Position Your Passport',
+        'Align the bottom lines of your passport data page in the frame.',
+        [{ text: 'Ready', onPress: () => runVerification() }],
+      );
     } catch (err) {
-      setScanState('failed');
+      setIsRunning(false);
       Alert.alert('Error', 'Could not start verification. Please try again.');
     }
-  }, [authToken, profile?.id]);
-
-  const handleRetry = useCallback(() => {
-    setScanState('idle');
-    setSessionId(null);
-    setPollCount(0);
   }, []);
 
-  const handleSkip = useCallback(() => {
-    router.replace('/onboarding/banking');
-  }, []);
+  const runVerification = useCallback(async () => {
+    const service = new VectaIDService(handleStep);
+
+    // In production: mrzLine1 and mrzLine2 come from the camera OCR
+    // These are placeholder values for scaffolding
+    const mrzLine1 = 'P<USASMITH<<JOHN<<<<<<<<<<<<<<<<<<<<<<<<<<<';
+    const mrzLine2 = 'L898902C36UTO7408122F1204159ZE184226B<<<<<14';
+
+    const verificationResult = await service.verify(mrzLine1, mrzLine2);
+    setResult(verificationResult);
+    setIsRunning(false);
+
+    if (verificationResult.success) {
+      await submitToBackend(verificationResult);
+    }
+  }, [handleStep]);
+
+  // ---------------------------------------------------------------------------
+  // Submit to backend
+  // ---------------------------------------------------------------------------
+
+  const submitToBackend = useCallback(async (verResult: VectaIDResult) => {
+    if (!authToken) return;
+    setSubmitting(true);
+
+    try {
+      const biometricPhotoHash = verResult.biometricPhoto
+        ? btoa(verResult.biometricPhoto).substring(0, 64) // simplified hash for scaffold
+        : '';
+
+      const res = await fetch(`${API_V1_BASE}/identity/vecta-id/verify`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          chipAuthenticated: verResult.chipAuthenticated,
+          passiveAuthPassed: verResult.passiveAuthPassed,
+          activeAuthPassed:  verResult.activeAuthPassed,
+          livenessScore:     verResult.livenessScore,
+          facialMatchScore:  verResult.facialMatchScore,
+          documentData:      verResult.documentData,
+          biometricPhotoHash,
+        }),
+      });
+
+      const data = await res.json() as { kycStatus: string; vectaIdToken?: string };
+
+      if (data.kycStatus === 'APPROVED') {
+        await fetchProfile();
+        router.replace('/onboarding/banking');
+      } else if (data.kycStatus === 'REVIEW') {
+        Alert.alert(
+          'Under Review',
+          'Your identity is being reviewed by our compliance team. You will be notified within 24 hours.',
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)') }],
+        );
+      } else {
+        Alert.alert('Verification Failed', data.kycStatus || 'Please try again.');
+      }
+    } catch (err) {
+      Alert.alert('Network Error', 'Could not submit verification. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [authToken, fetchProfile]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
-    <LinearGradient colors={VectaGradients.hero} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* Back button */}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.8)" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface1 }}>
+      {/* Header */}
+      <LinearGradient colors={['#001F3F', '#001A33']} style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
+        <Text style={s.headerTitle}>Passport Verification</Text>
+        <Text style={s.headerSub}>NFC chip · ICAO 9303 · Liveness check</Text>
+      </LinearGradient>
 
-        {/* State: APPROVED */}
-        {scanState === 'approved' && (
-          <View style={styles.centeredState}>
-            <View style={[styles.stateIcon, { backgroundColor: VectaColors.successBg }]}>
-              <Ionicons name="shield-checkmark" size={56} color={VectaColors.success} />
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 60 }}>
+
+        {/* Result */}
+        {result && (
+          <VerificationResult result={result} onRetry={() => { setResult(null); setCurrentStep('IDLE'); }} />
+        )}
+
+        {/* Progress indicator */}
+        {isRunning && (
+          <View style={[s.progressCard, { backgroundColor: colors.surfaceBase, borderColor: colors.border }]}>
+            <ActivityIndicator size="large" color="#00E6CC" />
+            <Text style={[s.stepLabel, { color: colors.text }]}>{stepDef.label}</Text>
+            <Text style={[s.stepDesc, { color: colors.textSecondary }]}>{stepDef.description}</Text>
+
+            <View style={[s.progressBar, { backgroundColor: colors.border }]}>
+              <View style={[s.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
             </View>
-            <Text style={styles.stateTitle}>Identity Verified!</Text>
-            <Text style={styles.stateSub}>Your passport has been authenticated. Setting up your bank account…</Text>
-            <ActivityIndicator color="#FFF" style={{ marginTop: VectaSpacing['4'] }} />
+
+            {/* Liveness challenge animation hint */}
+            {(currentStep.startsWith('LIVENESS')) && (
+              <View style={s.challengeHint}>
+                <Ionicons name={stepDef.icon as 'eye'} size={48} color="#00E6CC" />
+                <Text style={[s.challengeText, { color: colors.text }]}>{stepDef.description}</Text>
+              </View>
+            )}
           </View>
         )}
 
-        {/* State: FAILED */}
-        {scanState === 'failed' && (
-          <View style={styles.centeredState}>
-            <View style={[styles.stateIcon, { backgroundColor: VectaColors.errorBg }]}>
-              <Ionicons name="close-circle" size={56} color={VectaColors.error} />
-            </View>
-            <Text style={styles.stateTitle}>Verification Failed</Text>
-            <Text style={styles.stateSub}>
-              The passport scan could not be completed. Common causes:{'\n'}
-              • NFC not held long enough{'\n'}
-              • Passport chip not readable{'\n'}
-              • Liveness check not passed
-            </Text>
-            <TouchableOpacity onPress={handleRetry} style={styles.primaryBtn}>
-              <Text style={styles.primaryBtnText}>Try Again</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSkip} style={styles.ghostBtn}>
-              <Text style={styles.ghostBtnText}>Skip for now</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* State: SCANNING / PROCESSING */}
-        {(scanState === 'scanning' || scanState === 'processing') && (
-          <View style={styles.centeredState}>
-            <View style={[styles.stateIcon, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-              {scanState === 'scanning' ? (
-                <Ionicons name="radio" size={56} color={VectaColors.accent} />
-              ) : (
-                <ActivityIndicator size="large" color={VectaColors.accent} />
-              )}
-            </View>
-            <Text style={styles.stateTitle}>
-              {scanState === 'scanning' ? 'Scanning Passport…' : 'Processing…'}
-            </Text>
-            <Text style={styles.stateSub}>
-              {scanState === 'scanning'
-                ? 'Hold your passport flat against the back of your phone.'
-                : 'Running liveness check and biometric match. This takes 10–30 seconds.'}
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.5)', fontFamily: VectaFonts.mono, fontSize: VectaFonts.xs, marginTop: VectaSpacing['4'] }}>
-              {pollCount > 0 ? `Polling… (${pollCount})` : 'Waiting for NFC…'}
-            </Text>
-          </View>
-        )}
-
-        {/* State: IDLE or INITIATING */}
-        {(scanState === 'idle' || scanState === 'initiating') && (
+        {/* Start screen */}
+        {!isRunning && !result && (
           <>
-            {/* Icon */}
-            <View style={styles.heroIcon}>
-              <Ionicons name="book" size={52} color={VectaColors.accent} />
-            </View>
-
-            <Text style={styles.tag}>STEP 1 OF 5 · IDENTITY</Text>
-            <Text style={styles.title}>Passport Verification</Text>
-            <Text style={styles.subtitle}>
-              We scan your passport's NFC chip to verify your identity with government-level security.
-              Your passport number is encrypted and never shared with landlords.
-            </Text>
-
-            {/* Step list */}
-            <View style={styles.stepList}>
-              {SCAN_STEPS.map((step, i) => (
-                <View key={step.title} style={styles.stepRow}>
-                  <View style={styles.stepNum}>
-                    <Text style={styles.stepNumText}>{i + 1}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.stepHeader}>
-                      <Ionicons name={step.icon} size={16} color={VectaColors.accent} />
-                      <Text style={styles.stepTitle}>{step.title}</Text>
-                    </View>
-                    <Text style={styles.stepDetail}>{step.detail}</Text>
-                  </View>
+            {/* Feature list */}
+            <View style={[s.featCard, { backgroundColor: colors.surfaceBase, borderColor: colors.border }]}>
+              <Text style={[s.featTitle, { color: colors.text }]}>How it works</Text>
+              {[
+                { icon: 'scan',           text: 'Scan the bottom lines of your passport page' },
+                { icon: 'wifi',           text: 'Tap your passport to the back of your phone (NFC)' },
+                { icon: 'shield-checkmark', text: 'We verify the chip signature against government certificates' },
+                { icon: 'eye',            text: 'Complete a 30-second liveness check' },
+                { icon: 'person',         text: 'Face matched to your passport biometric photo' },
+              ].map(({ icon, text }) => (
+                <View key={text} style={s.featRow}>
+                  <Ionicons name={icon as 'scan'} size={18} color="#00E6CC" />
+                  <Text style={[s.featText, { color: colors.textSecondary }]}>{text}</Text>
                 </View>
               ))}
             </View>
 
-            {/* Privacy notice */}
-            <View style={styles.privacyBox}>
-              <Ionicons name="lock-closed" size={14} color={VectaColors.accent} />
-              <Text style={styles.privacyText}>
-                Your passport number is AES-256-GCM encrypted and never included in any landlord view or JWT token.
+            {/* Privacy note */}
+            <View style={[s.privacyCard, { backgroundColor: 'rgba(0,230,204,0.08)', borderColor: 'rgba(0,230,204,0.2)' }]}>
+              <Ionicons name="lock-closed" size={16} color="#00E6CC" />
+              <Text style={[s.privacyText, { color: colors.textSecondary }]}>
+                Your passport number, date of birth, and nationality are encrypted immediately and
+                never shown to landlords. Only your verified name and nationality tier are shared.
               </Text>
             </View>
 
-            {/* CTA */}
             <TouchableOpacity
-              onPress={handleStartScan}
-              disabled={scanState === 'initiating'}
-              style={[styles.primaryBtn, scanState === 'initiating' && { opacity: 0.7 }]}
-              activeOpacity={0.88}
+              onPress={handleStart}
+              style={s.startBtn}
+              activeOpacity={0.85}
             >
-              {scanState === 'initiating' ? (
-                <ActivityIndicator color={VectaColors.primary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>Start Passport Scan</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleSkip} style={styles.ghostBtn}>
-              <Text style={styles.ghostBtnText}>I'll do this later</Text>
+              <Ionicons name="scan" size={20} color="#001F3F" />
+              <Text style={s.startBtnText}>Start Passport Verification</Text>
             </TouchableOpacity>
           </>
         )}
+
+        {/* Submit spinner */}
+        {submitting && (
+          <View style={{ alignItems: 'center', gap: 8 }}>
+            <ActivityIndicator color="#00E6CC" />
+            <Text style={{ color: colors.textSecondary }}>Submitting to Vecta…</Text>
+          </View>
+        )}
+
       </ScrollView>
-    </LinearGradient>
+    </SafeAreaView>
   );
 }
 
@@ -261,45 +338,40 @@ export default function PassportScanScreen() {
 // Styles
 // ---------------------------------------------------------------------------
 
-const styles = StyleSheet.create({
-  scroll: {
-    flexGrow: 1,
-    paddingHorizontal: VectaSpacing['6'],
-    paddingTop: 60,
-    paddingBottom: 48,
-  },
-  backBtn: {
-    width: 40, height: 40, borderRadius: VectaRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: VectaSpacing['6'],
-  },
+const s = StyleSheet.create({
+  header:      { paddingTop: 16, paddingBottom: 24, paddingHorizontal: 20 },
+  backBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: '#FFF' },
+  headerSub:   { fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 4 },
 
-  // Shared state layouts
-  centeredState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40, gap: VectaSpacing['4'] },
-  stateIcon:     { width: 100, height: 100, borderRadius: VectaRadius.full, alignItems: 'center', justifyContent: 'center', marginBottom: VectaSpacing['2'] },
-  stateTitle:    { fontFamily: VectaFonts.extraBold, fontSize: VectaFonts['2xl'], color: '#FFF', textAlign: 'center' },
-  stateSub:      { fontFamily: VectaFonts.regular, fontSize: VectaFonts.sm, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 22, maxWidth: 300 },
+  progressCard: { borderRadius: 16, padding: 24, borderWidth: 1, alignItems: 'center', gap: 12 },
+  stepLabel:    { fontSize: 18, fontWeight: '700' },
+  stepDesc:     { fontSize: 14, textAlign: 'center' },
+  progressBar:  { width: '100%', height: 6, borderRadius: 3 },
+  progressFill: { height: 6, borderRadius: 3, backgroundColor: '#00E6CC' },
+  challengeHint:{ alignItems: 'center', gap: 8, marginTop: 8 },
+  challengeText:{ fontSize: 20, fontWeight: '700', textAlign: 'center' },
 
-  // Idle layout
-  heroIcon: { width: 96, height: 96, borderRadius: VectaRadius.full, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: VectaSpacing['5'] },
-  tag:      { fontFamily: VectaFonts.bold, fontSize: VectaFonts.xs, color: 'rgba(255,255,255,0.6)', letterSpacing: VectaFonts.letterSpacing.widest, marginBottom: VectaSpacing['2'] },
-  title:    { fontFamily: VectaFonts.extraBold, fontSize: VectaFonts['3xl'], color: '#FFF', marginBottom: VectaSpacing['3'], lineHeight: VectaFonts['3xl'] * 1.2 },
-  subtitle: { fontFamily: VectaFonts.regular, fontSize: VectaFonts.md, color: 'rgba(255,255,255,0.8)', lineHeight: 24, marginBottom: VectaSpacing['6'] },
+  featCard:  { borderRadius: 16, padding: 20, borderWidth: 1, gap: 14 },
+  featTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+  featRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  featText:  { fontSize: 13, flex: 1, lineHeight: 18 },
 
-  stepList: { gap: VectaSpacing['4'], marginBottom: VectaSpacing['5'] },
-  stepRow:  { flexDirection: 'row', gap: VectaSpacing['3'], alignItems: 'flex-start' },
-  stepNum:  { width: 24, height: 24, borderRadius: VectaRadius.full, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  stepNumText: { fontFamily: VectaFonts.bold, fontSize: VectaFonts.xs, color: VectaColors.accent },
-  stepHeader:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  stepTitle:   { fontFamily: VectaFonts.semiBold, fontSize: VectaFonts.sm, color: '#FFF' },
-  stepDetail:  { fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: 'rgba(255,255,255,0.65)', lineHeight: 18 },
+  privacyCard: { borderRadius: 12, padding: 14, borderWidth: 1, flexDirection: 'row', gap: 10 },
+  privacyText: { fontSize: 12, flex: 1, lineHeight: 17 },
 
-  privacyBox:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: 'rgba(0,212,255,0.1)', borderRadius: VectaRadius.md, padding: VectaSpacing['3'], marginBottom: VectaSpacing['6'], borderWidth: 1, borderColor: 'rgba(0,212,255,0.2)' },
-  privacyText: { fontFamily: VectaFonts.regular, fontSize: VectaFonts.xs, color: 'rgba(255,255,255,0.7)', flex: 1, lineHeight: 16 },
+  startBtn:     { backgroundColor: '#00E6CC', borderRadius: 14, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  startBtnText: { fontSize: 16, fontWeight: '700', color: '#001F3F' },
+});
 
-  primaryBtn:     { backgroundColor: '#FFF', borderRadius: VectaRadius.full, paddingVertical: VectaSpacing['4'], alignItems: 'center', marginBottom: VectaSpacing['3'] },
-  primaryBtnText: { fontFamily: VectaFonts.bold, fontSize: VectaFonts.md, color: VectaColors.primary },
-  ghostBtn:       { paddingVertical: VectaSpacing['2'], alignItems: 'center' },
-  ghostBtnText:   { fontFamily: VectaFonts.medium, fontSize: VectaFonts.sm, color: 'rgba(255,255,255,0.55)' },
+const res = StyleSheet.create({
+  card:       { borderRadius: 16, padding: 24, alignItems: 'center', gap: 12 },
+  title:      { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  subtitle:   { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  reason:     { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  checks:     { width: '100%', gap: 10, marginTop: 8 },
+  checkRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  checkLabel: { fontSize: 14 },
+  retryBtn:   { backgroundColor: '#001F3F', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 32, marginTop: 8 },
+  retryText:  { color: '#FFF', fontWeight: '700', fontSize: 15 },
 });

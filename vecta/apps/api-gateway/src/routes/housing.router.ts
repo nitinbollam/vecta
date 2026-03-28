@@ -1,11 +1,20 @@
 /**
  * housing.router.ts — Housing routes for API Gateway
  *
- * POST /api/v1/housing/plaid/link-token      — Create Plaid Link token
- * POST /api/v1/housing/plaid/exchange        — Exchange public token
+ * ── Vecta Connect (replaces Plaid) ──────────────────────────────────────────
+ * POST /api/v1/housing/connect/link-url      — Get Open Banking link URL
+ * POST /api/v1/housing/connect/callback      — Handle OAuth callback
+ * GET  /api/v1/housing/connect/asset-report  — Generate asset report
+ *
+ * ── Vecta Credit Bridge (replaces Nova Credit) ──────────────────────────────
+ * GET  /api/v1/housing/credit-score          — Vecta credit bridge score
+ *
+ * ── Legacy routes (still supported) ────────────────────────────────────────
+ * POST /api/v1/housing/plaid/link-token      — Create Plaid Link token (fallback)
+ * POST /api/v1/housing/plaid/exchange        — Exchange public token (fallback)
  * POST /api/v1/housing/loc/generate          — Generate Letter of Credit PDF
  * GET  /api/v1/housing/loc/:locId/download   — Signed download URL (student)
- * GET  /api/v1/housing/trust-score           — Nova Credit trust score
+ * GET  /api/v1/housing/trust-score           — Trust score (now via Vecta Bridge)
  * POST /api/v1/housing/roommate/profile      — Upsert lifestyle profile (embedding)
  * GET  /api/v1/housing/roommate/matches      — Get AI roommate matches
  */
@@ -32,7 +41,128 @@ router.use(authMiddleware);
 router.use(requireKYC('APPROVED'));
 
 // ---------------------------------------------------------------------------
-// Plaid Link Token
+// Vecta Connect: GET link URL (routes to best Open Banking connector)
+// POST /api/v1/housing/connect/link-url
+// ---------------------------------------------------------------------------
+
+router.post('/connect/link-url', async (req: Request, res: Response) => {
+  try {
+    const studentId  = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub ?? (req as unknown as { user: { id: string } }).user?.id;
+    const { bankId, redirectUri } = z
+      .object({
+        bankId:      z.string().min(2),
+        redirectUri: z.string().url(),
+      })
+      .parse(req.body);
+
+    const { VectaConnect } = await import('../../../../services/banking-service/src/vecta-connect.service');
+    const connect = new VectaConnect();
+    const result  = await connect.getLinkUrl(studentId, bankId, redirectUri);
+
+    res.json({
+      linkUrl:       result.linkUrl,
+      connectorType: result.connectorType,
+      state:         result.state,
+      provider:      'vecta-connect',
+    });
+  } catch (err) {
+    logger.error({ err }, '[Connect] Failed to get link URL');
+    res.status(500).json({ error: 'CONNECT_LINK_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Vecta Connect: handle OAuth callback
+// POST /api/v1/housing/connect/callback
+// ---------------------------------------------------------------------------
+
+router.post('/connect/callback', async (req: Request, res: Response) => {
+  try {
+    const studentId = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub ?? (req as unknown as { user: { id: string } }).user?.id;
+    const { code, state, connectorType } = z
+      .object({
+        code:          z.string(),
+        state:         z.string(),
+        connectorType: z.string(),
+      })
+      .parse(req.body);
+
+    const { VectaConnect } = await import('../../../../services/banking-service/src/vecta-connect.service');
+    const connect    = new VectaConnect();
+    const connection = await connect.handleCallback(studentId, code, state, connectorType as never);
+
+    res.status(201).json({
+      connectionId:  connection.connectionId,
+      bankName:      connection.bankName,
+      connectorType: connection.connectorType,
+      status:        connection.status,
+      provider:      'vecta-connect',
+    });
+  } catch (err) {
+    logger.error({ err }, '[Connect] Callback failed');
+    res.status(500).json({ error: 'CONNECT_CALLBACK_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Vecta Connect: generate asset report
+// GET /api/v1/housing/connect/asset-report
+// ---------------------------------------------------------------------------
+
+router.get('/connect/asset-report', async (req: Request, res: Response) => {
+  try {
+    const studentId    = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub ?? (req as unknown as { user: { id: string } }).user?.id;
+    const connectionId = String(req.query.connectionId ?? '');
+    if (!connectionId) return res.status(400).json({ error: 'connectionId required' });
+
+    const { VectaConnect } = await import('../../../../services/banking-service/src/vecta-connect.service');
+    const connect = new VectaConnect();
+    const report  = await connect.generateAssetReport(connectionId);
+
+    res.json({
+      ...report,
+      provider: 'vecta-connect',
+    });
+  } catch (err) {
+    logger.error({ err }, '[Connect] Asset report failed');
+    res.status(500).json({ error: 'ASSET_REPORT_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Vecta Credit Bridge: credit score
+// GET /api/v1/housing/credit-score
+// Replaces Nova Credit's trust-score endpoint
+// ---------------------------------------------------------------------------
+
+router.get('/credit-score', async (req: Request, res: Response) => {
+  try {
+    const studentId = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub ?? (req as unknown as { user: { id: string } }).user?.id;
+
+    const { VectaCreditBridge } = await import('../../../../services/housing-service/src/vecta-credit-bridge.service');
+    const bridge = new VectaCreditBridge();
+    const result = await bridge.getCreditScore(studentId);
+
+    res.json({
+      usEquivalentScore: result.usEquivalentScore,
+      originalScore:     result.originalScore,
+      originalRange:     result.originalRange,
+      bureau:            result.bureau,
+      scoreMethod:       result.scoreMethod,
+      solvencyTier:      result.solvencyTier,
+      factors:           result.factors,
+      reportDate:        result.reportDate,
+      f1SafeToShare:     result.f1SafeToShare,
+      provider:          'vecta-bridge',
+    });
+  } catch (err) {
+    logger.error({ err }, '[CreditBridge] Credit score fetch failed');
+    res.status(500).json({ error: 'CREDIT_SCORE_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Legacy: Plaid Link Token (kept as fallback)
 // ---------------------------------------------------------------------------
 
 router.post('/plaid/link-token', async (req: Request, res: Response) => {

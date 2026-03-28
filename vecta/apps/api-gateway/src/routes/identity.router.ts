@@ -1,13 +1,19 @@
 /**
- * identity.router.ts — Identity & Banking routes for API Gateway
+ * identity.router.ts — Identity routes for API Gateway
  *
+ * ── Vecta ID (new, in-house) ─────────────────────────────────────────────────
+ * POST /api/v1/identity/vecta-id/verify      — Process NFC verification result
+ *
+ * ── Legacy: Didit (fallback) ─────────────────────────────────────────────────
  * POST /api/v1/identity/verify/initiate      — Start Didit NFC session
  * GET  /api/v1/identity/verify/:sessionId    — Poll session status
+ *
+ * ── Shared ───────────────────────────────────────────────────────────────────
  * POST /api/v1/identity/token/mint           — Mint Vecta ID token (post-KYC)
  * GET  /api/v1/identity/token/verify         — Verify Vecta ID token (landlord)
- * POST /api/v1/identity/banking/provision    — Provision Unit.co DDA
+ * POST /api/v1/identity/banking/provision    — Provision ledger DDA
  * GET  /api/v1/identity/banking/balance      — Get masked balance
- * (Didit / Unit webhooks live on /webhooks/didit and /webhooks/unit — see identity-webhooks.router.ts)
+ * (Didit / Unit webhooks — see identity-webhooks.router.ts)
  */
 
 import { Router, Request, Response } from 'express';
@@ -20,7 +26,53 @@ const logger = createLogger('identity-router');
 const router = Router();
 
 // ---------------------------------------------------------------------------
-// Didit NFC verification — initiate
+// VectaID: process NFC verification result from mobile app
+// POST /api/v1/identity/vecta-id/verify
+// ---------------------------------------------------------------------------
+
+router.post('/vecta-id/verify', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const studentId = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub;
+    const body      = z.object({
+      chipAuthenticated: z.boolean(),
+      passiveAuthPassed: z.boolean(),
+      activeAuthPassed:  z.boolean(),
+      livenessScore:     z.number().min(0).max(1),
+      facialMatchScore:  z.number().min(0).max(1),
+      documentData: z.object({
+        firstName:      z.string(),
+        lastName:       z.string(),
+        documentNumber: z.string(),
+        nationality:    z.string(),
+        dateOfBirth:    z.string(),
+        expiryDate:     z.string(),
+        issuingCountry: z.string(),
+      }),
+      biometricPhotoHash: z.string().optional().default(''),
+    }).parse(req.body);
+
+    const { VectaIDService } = await import('../../../../services/identity-service/src/vecta-id.service');
+    const { getPool } = await import('@vecta/database');
+    const service = new VectaIDService(getPool());
+    const result  = await service.processVerification({ studentId, ...body });
+
+    res.json({
+      kycStatus:    result.kycStatus,
+      vectaIdToken: result.vectaIdToken,
+      failureReason:result.failureReason,
+      provider:     'vecta-id',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', issues: err.issues });
+    }
+    logger.error({ err }, '[VectaID] Verification processing failed');
+    res.status(500).json({ error: 'VECTA_ID_VERIFY_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Didit NFC verification — initiate (legacy fallback)
 // ---------------------------------------------------------------------------
 
 router.post('/verify/initiate', authMiddleware, async (req: Request, res: Response) => {
