@@ -17,6 +17,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authMiddleware, requireKYC } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
+import { stripFreeText } from '../lib/sanitize';
 import { query, queryOne, withTransaction } from '@vecta/database';
 
 const logger = createLogger('banking-router');
@@ -147,8 +148,8 @@ const transferSchema = z.object({
   amountCents:      z.number().int().min(100),    // minimum $1
   externalRouting:  z.string().regex(/^\d{9}$/),  // 9-digit routing number
   externalAccount:  z.string().min(4).max(17),
-  bankName:         z.string().min(2).max(100),
-  description:      z.string().optional(),
+  bankName:         z.string().trim().min(2).max(100).transform((v) => stripFreeText(v)),
+  description:      z.string().trim().max(500).transform((v) => stripFreeText(v)).optional(),
 });
 
 router.post('/transfer', authMiddleware, requireKYC, async (req: Request, res: Response) => {
@@ -162,7 +163,12 @@ router.post('/transfer', authMiddleware, requireKYC, async (req: Request, res: R
 
     const transfer = await ledger.initiateACHTransfer({
       accountId:       account.id,
-      ...params,
+      direction:       params.direction,
+      amountCents:     params.amountCents,
+      externalRouting: params.externalRouting,
+      externalAccount: params.externalAccount,
+      bankName:        params.bankName,
+      description:     params.description,
     });
 
     res.status(201).json({

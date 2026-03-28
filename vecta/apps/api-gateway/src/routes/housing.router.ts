@@ -28,6 +28,7 @@ import { createLogger } from '@vecta/logger';
 import { getPool, query, queryOne } from '@vecta/database';
 import { getSignedDownloadUrl } from '@vecta/storage';
 import Redis from 'ioredis';
+import { stripFreeText } from '../lib/sanitize';
 
 const logger = createLogger('housing-router');
 const router = Router();
@@ -206,8 +207,8 @@ router.post('/loc/generate', async (req: Request, res: Response) => {
     const { monthlyRent, landlordName, propertyAddress } = z
       .object({
         monthlyRent:     z.number().positive().max(50_000),
-        landlordName:    z.string().optional(),
-        propertyAddress: z.string().optional(),
+        landlordName:    z.string().trim().max(200).transform((v) => stripFreeText(v)).optional(),
+        propertyAddress: z.string().trim().max(500).transform((v) => stripFreeText(v)).optional(),
       })
       .parse(req.body);
 
@@ -353,13 +354,13 @@ router.post('/roommate/profile', async (req: Request, res: Response) => {
         guestPolicy:    z.enum(['no_guests', 'occasional', 'frequent']),
         noiseLevel:     z.enum(['very_quiet', 'moderate', 'social']),
         studyHabits:    z.enum(['library', 'home_quiet', 'home_music', 'cafe']),
-        dietaryNeeds:   z.array(z.string()).max(10),
-        languages:      z.array(z.string()).max(10),
-        majorCategory:  z.string().max(50),
-        interests:      z.array(z.string()).max(20),
+        dietaryNeeds:   z.array(z.string().trim().max(120).transform((v) => stripFreeText(v))).max(10),
+        languages:      z.array(z.string().trim().max(40).transform((v) => stripFreeText(v))).max(10),
+        majorCategory:  z.string().trim().max(50).transform((v) => stripFreeText(v)),
+        interests:      z.array(z.string().trim().max(80).transform((v) => stripFreeText(v))).max(20),
         budgetMin:      z.number().positive(),
         budgetMax:      z.number().positive(),
-        moveInDate:     z.string(),
+        moveInDate:     z.string().trim().max(32),
         universityId:   z.string().uuid().optional(),
       })
       .parse(req.body);

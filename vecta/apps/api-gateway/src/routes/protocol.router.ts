@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { createLogger, logAuditEvent } from '@vecta/logger';
 import { queryOne } from '@vecta/database';
 import { authMiddleware, requireKYC } from '@vecta/auth';
+import { stripFreeText } from '../lib/sanitize';
 import {
   issueVisaCertificate,
   issueCreditCertificate,
@@ -317,9 +318,9 @@ router.post('/protocol/liquidity/check', authMiddleware, requireKYC('APPROVED'),
 
     const body = z.object({
       certId:        z.string().uuid(),
-      city:          z.string().min(2).max(100),
+      city:          z.string().trim().min(2).max(100).transform((v) => stripFreeText(v)),
       monthlyRent:   z.number().positive().max(20_000),
-      guaranteeTier: z.string(),
+      guaranteeTier: z.string().trim().max(32).transform((v) => stripFreeText(v)),
     }).parse(req.body);
 
     const student = await queryOne<{ university_name: string | null }>(
@@ -353,7 +354,7 @@ router.post('/protocol/liquidity/allocate', authMiddleware, requireKYC('APPROVED
       strategy:          z.enum(['GUARANTEED_RENT', 'UNIVERSITY_BACKED', 'CORPORATE_PARTNER']),
       monthlyRent:       z.number().positive(),
       monthsCovered:     z.number().int().min(1).max(3),
-      badgeText:         z.string().max(200),
+      badgeText:         z.string().trim().max(200).transform((v) => stripFreeText(v)),
     }).parse(req.body);
 
     const result = await allocateLiquidity({

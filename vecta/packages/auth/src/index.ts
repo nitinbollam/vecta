@@ -100,3 +100,6 @@ export {
   type JWK,
   type JWKS,
 } from './key-manager';
+
+// Internal HMAC request signing (service-to-service)
+export { signInternalRequest, verifyInternalRequest } from './internal-request-signer';

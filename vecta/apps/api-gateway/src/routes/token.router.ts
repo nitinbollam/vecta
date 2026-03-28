@@ -18,6 +18,8 @@ import { authMiddleware, listActiveTokens, revokeToken } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
 import { query, queryOne, withTransaction } from '@vecta/database';
 import { hmacSign } from '@vecta/crypto';
+import { getRedisGateway } from '../lib/redis-shared';
+import { stripFreeText } from '../lib/sanitize';
 
 const logger = createLogger('token-router');
 const router = Router();
@@ -78,10 +80,25 @@ router.delete(
 router.post('/landlord/register', async (req: Request, res: Response) => {
   try {
     const { email, fullName, companyName } = z.object({
-      email:       z.string().email().max(254),
-      fullName:    z.string().max(200).optional(),
-      companyName: z.string().max(200).optional(),
+      email:       z.string().email().max(254).trim().toLowerCase(),
+      fullName:    z.string().trim().max(100).transform((v) => stripFreeText(v)).optional(),
+      companyName: z.string().trim().max(200).transform((v) => stripFreeText(v)).optional(),
     }).parse(req.body);
+
+    const redis = getRedisGateway();
+    const emailRateLimitKey = `landlord_magic_link_rate:${email}`;
+    const attempts = await redis.incr(emailRateLimitKey);
+    if (attempts === 1) {
+      await redis.expire(emailRateLimitKey, 3600);
+    }
+    if (attempts > 3) {
+      res.status(429).json({
+        error:      'RATE_LIMIT_EXCEEDED',
+        message:    'Maximum 3 sign-in links per hour per email address. Please check your inbox or try again later.',
+        retryAfter: 3600,
+      });
+      return;
+    }
 
     await withTransaction(async (client) => {
       // Upsert landlord profile (idempotent)

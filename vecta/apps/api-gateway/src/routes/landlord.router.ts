@@ -7,7 +7,7 @@
  *   POST /webhooks/checkr                            — Checkr completion webhook
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { createLogger } from '@vecta/logger';
 import { hmacVerify } from '@vecta/crypto';
@@ -25,7 +25,7 @@ router.post(
   async (req: Request, res: Response) => {
     try {
       const { landlordEmail } = z
-        .object({ landlordEmail: z.string().email() })
+        .object({ landlordEmail: z.string().email().max(254).trim().toLowerCase() })
         .parse(req.body);
 
       // Look up landlord by email
@@ -102,28 +102,65 @@ router.get(
 
 // ---------------------------------------------------------------------------
 // Checkr webhook (public — HMAC verified with Checkr signing secret)
+// Body must be raw JSON (see server.ts express.raw for /webhooks).
 // ---------------------------------------------------------------------------
 
-router.post('/webhooks/checkr', async (req: Request, res: Response) => {
-  const signature = req.headers['x-checkr-signature'] as string;
-  const secret    = process.env.CHECKR_WEBHOOK_SECRET ?? '';
+function rawWebhookPayload(req: Request): string {
+  if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
+  if (typeof req.body === 'string') return req.body;
+  return JSON.stringify(req.body ?? {});
+}
+
+function safeHmacVerify(payload: string, signature: string, secret: string): boolean {
+  try {
+    return hmacVerify(payload, signature, secret);
+  } catch {
+    return false;
+  }
+}
+
+function verifyCheckrWebhook(req: Request, res: Response, next: NextFunction): void {
+  const signature = req.headers['x-checkr-signature'] as string | undefined;
+  const webhookSecret = process.env.CHECKR_WEBHOOK_SECRET ?? '';
+
+  if (!webhookSecret) {
+    logger.error('CHECKR_WEBHOOK_SECRET not set — rejecting webhook');
+    res.status(500).json({ error: 'Webhook not configured' });
+    return;
+  }
 
   if (!signature) {
-    res.status(400).json({ error: 'MISSING_SIGNATURE' }); return;
+    logger.warn('Checkr webhook received without signature');
+    res.status(401).json({ error: 'Missing signature' });
+    return;
   }
 
-  const rawBody = JSON.stringify(req.body);
-
-  if (!hmacVerify(rawBody, signature, secret)) {
-    logger.warn({}, 'Checkr webhook HMAC verification failed');
-    res.status(401).json({ error: 'INVALID_SIGNATURE' }); return;
+  const rawBody = rawWebhookPayload(req);
+  if (!safeHmacVerify(rawBody, signature, webhookSecret)) {
+    logger.warn({ ip: req.ip }, 'Checkr webhook signature mismatch — possible forgery');
+    res.status(401).json({ error: 'Invalid signature' });
+    return;
   }
+
+  try {
+    (req as Request & { parsedWebhookJson?: unknown }).parsedWebhookJson = JSON.parse(rawBody || '{}');
+  } catch {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
+  next();
+}
+
+router.post('/webhooks/checkr', verifyCheckrWebhook, async (req: Request, res: Response) => {
+  const body = (req as Request & { parsedWebhookJson?: Record<string, unknown> }).parsedWebhookJson ?? {};
 
   try {
     const { handleCheckrWebhook } = await import(
       '../../../../services/identity-service/src/checkr.service'
     );
-    await handleCheckrWebhook(req.body);
+    await handleCheckrWebhook(
+      body as unknown as import('../../../../services/identity-service/src/checkr.service').CheckrWebhookPayload,
+    );
     res.json({ received: true });
   } catch (err) {
     logger.error({ err }, 'Checkr webhook processing failed');

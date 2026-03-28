@@ -27,6 +27,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { createLogger, logAuditEvent } from '@vecta/logger';
 import { query, queryOne, withTransaction } from '@vecta/database';
@@ -39,6 +40,21 @@ import {
 
 const logger = createLogger('certificate-router');
 const router = Router();
+
+const verifyRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max:      20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? 'unknown',
+  handler: (_req, res) => {
+    res.status(429).json({
+      error:   'RATE_LIMIT_EXCEEDED',
+      message: 'Too many verification attempts. Please wait before trying again.',
+    });
+  },
+  skip: (req) => !!req.headers.authorization,
+});
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -408,7 +424,7 @@ router.get('/certificate/:token', async (req: Request, res: Response) => {
 // POST /api/v1/certificate/verify  — client-side proof verification
 // ---------------------------------------------------------------------------
 
-router.post('/certificate/verify', async (req: Request, res: Response) => {
+router.post('/certificate/verify', verifyRateLimiter, async (req: Request, res: Response) => {
   const body = z.object({
     certificate: z.object({
       certId:        z.string().uuid(),
@@ -466,8 +482,8 @@ router.post('/certificate/verify', async (req: Request, res: Response) => {
 
 router.post('/certificate/:certId/accept', async (req: Request, res: Response) => {
   const body = z.object({
-    landlordEmail:   z.string().email(),
-    propertyAddress: z.string().min(5).max(500),
+    landlordEmail:   z.string().email().max(254).trim().toLowerCase(),
+    propertyAddress: z.string().trim().min(5).max(500).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
     monthlyRent:     z.number().positive().max(50_000),
     leaseStartDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     leaseDurationMonths: z.number().int().min(1).max(24),

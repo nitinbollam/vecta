@@ -1,56 +1,68 @@
 /** @type {import('next').NextConfig} */
-const isDev = process.env.NODE_ENV === 'development';
-
 const nextConfig = {
   reactStrictMode: true,
 
-  // Server-side env vars (never exposed to the browser)
   serverRuntimeConfig: {
     VECTA_INTERNAL_API_URL: process.env.VECTA_INTERNAL_API_URL ?? 'http://api-gateway:4000',
     VECTA_JWT_PUBLIC_KEY:   process.env.VECTA_JWT_PUBLIC_KEY ?? '',
   },
 
-  // Public env vars (safe to expose to browser)
   publicRuntimeConfig: {
     APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
   },
 
-  // Security headers for landlord portal
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
-          { key: 'X-Frame-Options',        value: 'DENY' },
-          { key: 'X-Content-Type-Options',  value: 'nosniff' },
-          { key: 'Referrer-Policy',         value: 'strict-origin-when-cross-origin' },
-          { key: 'X-XSS-Protection',        value: '1; mode=block' },
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Dev: React / Next need 'unsafe-eval' for Fast Refresh and stack reconstruction (not used in prod).
-              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https://vecta.io",
-              "connect-src 'self'",
-              "frame-src 'none'",
-              "object-src 'none'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "img-src 'self' data: blob: https://*.supabase.co https://*.amazonaws.com",
+              "connect-src 'self' https://vecta-elaf.onrender.com https://*.supabase.co",
+              "frame-ancestors 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
             ].join('; '),
+          },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), payment=()',
           },
           {
             key: 'Strict-Transport-Security',
             value: 'max-age=31536000; includeSubDomains; preload',
           },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+        ],
+      },
+      {
+        source: '/.well-known/vecta-keys',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
           {
-            key: 'Permissions-Policy',
-            value: 'camera=(), microphone=(), geolocation=()',
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=3600',
           },
         ],
       },
-      // Verify routes — never indexed
       {
         source: '/verify/(.*)',
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+        ],
+      },
+      {
+        source: '/id/(.*)',
         headers: [
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
@@ -59,10 +71,8 @@ const nextConfig = {
     ];
   },
 
-  // No static export — all verify pages are SSR-only
   output: 'standalone',
 
-  // Proxy browser /api/v1/* to Render (or any) gateway when API_GATEWAY_URL is set (e.g. Vercel + Render).
   async rewrites() {
     const gateway = process.env.API_GATEWAY_URL;
     if (!gateway?.trim()) return [];
@@ -73,11 +83,14 @@ const nextConfig = {
   },
 
   images: {
-    domains: [],   // No external image sources — selfies are served via signed S3 URLs
+    domains: [],
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.amazonaws.com', pathname: '/**' },
+      { protocol: 'https', hostname: 'vecta-elaf.onrender.com', pathname: '/**' },
+    ],
     dangerouslyAllowSVG: false,
   },
 
-  // Bundle analysis
   ...(process.env.ANALYZE === 'true' && {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     ...(require('@next/bundle-analyzer')({ enabled: true })),

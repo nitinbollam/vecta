@@ -3,26 +3,26 @@
 // The single external-facing entrypoint. Routes all traffic to microservices.
 
 import "./load-env";
+import { validateSecurityEnv } from "./validate-env";
+validateSecurityEnv();
+
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import Redis from "ioredis";
 import { authMiddleware } from "./middleware/auth.middleware";
 import { requestLogger } from "./middleware/request-logger.middleware";
 import { errorHandler } from "./middleware/error-handler.middleware";
 import { logger } from "./lib/logger";
 import { getPool } from "@vecta/database";
+import { getRedisGateway } from "./lib/redis-shared";
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
 
 /** Single shared pool (same instance as @vecta/database helpers). */
 export const db = getPool();
 
-export const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {
-  maxRetriesPerRequest: 3,
-  lazyConnect: true,
-});
+export const redis = getRedisGateway();
 
 // ─── Service Availability ─────────────────────────────────────────────────────
 // Populated during bootstrap. Routes are always registered, but handlers
@@ -92,9 +92,18 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "http://localhost:3000,ht
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // No origin = server-to-server request or React Native mobile app.
+    // React Native does not send an Origin header for fetch() calls.
+    // This is intentional and required for the student mobile app to work.
+    // When we add API key authentication for third parties, tighten this.
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      logger.warn({ origin }, "CORS: rejected request from unlisted origin");
       callback(new Error(`CORS: origin ${origin} not allowed`));
     }
   },
@@ -125,8 +134,44 @@ const tokenRateLimiter = rateLimit({
 
 app.use(globalRateLimiter);
 app.use(requestLogger);
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Large payloads: university health-plan analyze (JSON or PDF) — before global 100kb JSON cap
+app.use(
+  "/api/v1/insurance/health-plan/analyze",
+  (req, res, next) => {
+    const ct = (req.headers["content-type"] ?? "").toLowerCase();
+    if (ct.includes("application/pdf")) {
+      return express.raw({ type: "application/pdf", limit: "20mb" })(req, res, next);
+    }
+    return express.json({ limit: "20mb" })(req, res, next);
+  },
+);
+
+// Webhooks: raw JSON body for HMAC signature verification (must precede express.json)
+app.use("/webhooks", express.raw({ type: "application/json", limit: "2mb" }));
+
+const jsonParser = express.json({ limit: "100kb" });
+const urlencodedParser = express.urlencoded({ extended: true, limit: "100kb" });
+
+app.use((req, res, next) => {
+  const p = req.path ?? "";
+  if (p.startsWith("/webhooks")) {
+    return next();
+  }
+  // Insurance analyze: first matching parser wins; skip default JSON if raw/pdf already consumed
+  if (p === "/api/v1/insurance/health-plan/analyze") {
+    return next();
+  }
+  return jsonParser(req, res, next);
+});
+
+app.use((req, res, next) => {
+  const p = req.path ?? "";
+  if (p.startsWith("/webhooks") || p === "/api/v1/insurance/health-plan/analyze") {
+    return next();
+  }
+  return urlencodedParser(req, res, next);
+});
 
 // ─── Health & Readiness ───────────────────────────────────────────────────────
 

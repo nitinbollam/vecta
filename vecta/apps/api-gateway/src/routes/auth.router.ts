@@ -17,6 +17,7 @@ import { createLogger } from '@vecta/logger';
 import { query, queryOne, withTransaction } from '@vecta/database';
 import { hmacSign, generateSecureToken } from '@vecta/crypto';
 import { sendLandlordVerifyEmail } from '../../../../services/identity-service/src/email.service';
+import { getRedisGateway } from '../lib/redis-shared';
 
 const logger = createLogger('auth-router');
 const router = Router();
@@ -32,8 +33,25 @@ const MAGIC_LINK_TTL  = 15 * 60 * 1000; // 15 minutes
 
 router.post('/auth/magic-link', async (req: Request, res: Response) => {
   try {
-    const { email } = z.object({ email: z.string().email().max(254) }).parse(req.body);
-    const normalised = email.trim().toLowerCase();
+    const { email } = z.object({
+      email: z.string().email().max(254).trim().toLowerCase(),
+    }).parse(req.body);
+    const normalised = email;
+
+    const redis = getRedisGateway();
+    const emailRateLimitKey = `magic_link_rate:${normalised}`;
+    const attempts = await redis.incr(emailRateLimitKey);
+    if (attempts === 1) {
+      await redis.expire(emailRateLimitKey, 3600);
+    }
+    if (attempts > 3) {
+      res.status(429).json({
+        error:      'RATE_LIMIT_EXCEEDED',
+        message:    'Maximum 3 sign-in links per hour per email address. Please check your inbox or try again later.',
+        retryAfter: 3600,
+      });
+      return;
+    }
 
     await withTransaction(async (client) => {
       // Upsert student by email (first-time creates the record)
@@ -88,10 +106,10 @@ router.post('/auth/verify', async (req: Request, res: Response) => {
   try {
     const { token, email } = z.object({
       token: z.string().min(40).max(60),
-      email: z.string().email(),
+      email: z.string().email().max(254).trim().toLowerCase(),
     }).parse(req.body);
 
-    const normalised = email.trim().toLowerCase();
+    const normalised = email;
     const tokenHash  = hmacSign(token);
 
     const row = await queryOne<{

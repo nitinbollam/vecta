@@ -19,6 +19,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { identityService, mintVectaIDToken, verifyVectaIDToken } from '../../../../services/identity-service/src/didit.service';
+import type { VectaIDVerifyRequest } from '../../../../services/identity-service/src/vecta-id.service';
 import { baasService } from '../../../../services/identity-service/src/unit.service';
 import { authMiddleware, requireKYC } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
@@ -33,28 +34,28 @@ const router = Router();
 router.post('/vecta-id/verify', authMiddleware, async (req: Request, res: Response) => {
   try {
     const studentId = (req as Request & { vectaUser: { sub: string } }).vectaUser?.sub;
-    const body      = z.object({
+    const body = z.object({
       chipAuthenticated: z.boolean(),
       passiveAuthPassed: z.boolean(),
       activeAuthPassed:  z.boolean(),
       livenessScore:     z.number().min(0).max(1),
       facialMatchScore:  z.number().min(0).max(1),
       documentData: z.object({
-        firstName:      z.string(),
-        lastName:       z.string(),
-        documentNumber: z.string(),
-        nationality:    z.string(),
-        dateOfBirth:    z.string(),
-        expiryDate:     z.string(),
-        issuingCountry: z.string(),
+        firstName:      z.string().trim().max(100).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+        lastName:       z.string().trim().max(100).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+        documentNumber: z.string().trim().max(32).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+        nationality:    z.string().trim().max(8).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+        dateOfBirth:    z.string().trim().max(32),
+        expiryDate:     z.string().trim().max(32),
+        issuingCountry: z.string().trim().max(8).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
       }),
       biometricPhotoHash: z.string().optional().default(''),
-    }).parse(req.body);
+    }).parse(req.body) as Omit<VectaIDVerifyRequest, 'studentId'>;
 
     const { VectaIDService } = await import('../../../../services/identity-service/src/vecta-id.service');
     const { getPool } = await import('@vecta/database');
     const service = new VectaIDService(getPool());
-    const result  = await service.processVerification({ studentId, ...body });
+    const result  = await service.processVerification({ studentId, ...body } as VectaIDVerifyRequest);
 
     res.json({
       kycStatus:    result.kycStatus,
@@ -145,9 +146,9 @@ router.post('/token/verify', async (req: Request, res: Response) => {
   try {
     const { token, landlordIp, landlordUserAgent } = z
       .object({
-        token:             z.string(),
-        landlordIp:        z.string().optional(),
-        landlordUserAgent: z.string().optional(),
+        token:             z.string().min(10).max(8192),
+        landlordIp:        z.string().trim().max(128).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')).optional(),
+        landlordUserAgent: z.string().trim().max(512).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')).optional(),
       })
       .parse(req.body);
 

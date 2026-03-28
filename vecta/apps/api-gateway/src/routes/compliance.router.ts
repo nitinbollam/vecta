@@ -31,6 +31,7 @@ import {
   onboardLandlord,
   recordAcceptance,
 } from '../../../../services/compliance-service/src/landlord-credibility.service';
+import { stripFreeText } from '../lib/sanitize';
 
 const logger = createLogger('compliance-router');
 const router = Router();
@@ -76,8 +77,8 @@ router.post('/compliance/cases/:id/resolve', officerAuth, async (req: Request, r
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
     const { decision, rationale, officerEmail } = z.object({
       decision:     z.enum(['RESOLVED_PASS', 'RESOLVED_FAIL', 'ESCALATED']),
-      rationale:    z.string().min(10).max(2000),
-      officerEmail: z.string().email(),
+      rationale:    z.string().trim().min(10).max(1000).transform((v) => stripFreeText(v)),
+      officerEmail: z.string().email().max(254).trim().toLowerCase(),
     }).parse(req.body);
 
     await resolveCase({ caseId: id, officerEmail, decision, rationale });
@@ -91,7 +92,7 @@ router.post('/compliance/cases/:id/resolve', officerAuth, async (req: Request, r
 router.post('/compliance/cases/:id/assign', officerAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { officerEmail } = z.object({ officerEmail: z.string().email() }).parse(req.body);
+    const { officerEmail } = z.object({ officerEmail: z.string().email().max(254).trim().toLowerCase() }).parse(req.body);
 
     await query(
       `UPDATE compliance_cases
@@ -180,8 +181,8 @@ router.post('/landlord/onboard', async (req: Request, res: Response) => {
     const body = z.object({
       landlordProfileId: z.string().uuid(),
       propertyCount:     z.number().int().min(1).max(10_000),
-      cities:            z.array(z.string().max(100)).max(50),
-      referralCode:      z.string().optional(),
+      cities:            z.array(z.string().trim().max(100).transform((v) => stripFreeText(v))).max(50),
+      referralCode:      z.string().trim().max(64).transform((v) => stripFreeText(v)).optional(),
     }).parse(req.body);
 
     const result = await onboardLandlord(body as Parameters<typeof onboardLandlord>[0]);
@@ -198,9 +199,9 @@ router.post('/landlord/acceptance', async (req: Request, res: Response) => {
       landlordId:    z.string().uuid(),
       studentId:     z.string().uuid(),
       certId:        z.string(),
-      city:          z.string().min(2).max(100),
+      city:          z.string().trim().min(2).max(100).transform((v) => stripFreeText(v)),
       state:         z.string().length(2).toUpperCase(),
-      universityName: z.string().max(200),
+      universityName: z.string().trim().max(200).transform((v) => stripFreeText(v)),
     }).parse(req.body);
 
     await recordAcceptance(body as Parameters<typeof recordAcceptance>[0]);

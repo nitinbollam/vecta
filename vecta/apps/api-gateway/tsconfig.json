@@ -20,7 +20,7 @@
       "@vecta/types": ["../../packages/types/src/index.ts"]
     }
   },
-  "include": ["src/**/*", "../../packages/**/*", "../../services/**/*"],
+  "include": ["src/**/*", "scripts/**/*", "../../packages/**/*", "../../services/**/*"],
   "exclude": [
     "node_modules",
     "dist",

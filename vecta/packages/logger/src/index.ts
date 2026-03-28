@@ -61,14 +61,44 @@ const baseOptions: LoggerOptions = {
     env: process.env.NODE_ENV ?? 'development',
     version: process.env.npm_package_version ?? '0.0.0',
   },
+  redact: {
+    paths: [
+      'email',
+      'password',
+      'token',
+      'secret',
+      'authorization',
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'passportNumber',
+      'dateOfBirth',
+      'nationality',
+      'countryOfOrigin',
+      'nationalId',
+      'accountNumber',
+      'routingNumber',
+      'cardNumber',
+      'cvv',
+      'documentNumber',
+      'biometricPhoto',
+      'photoBase64',
+      'vectaIdNumber',
+      'jti',
+      'certId',
+    ],
+    censor: '[REDACTED]',
+  },
   serializers: {
     req(req) {
+      const rawUrl = req.url ?? '';
       return {
         method: req.method,
-        url: req.url,
+        url: rawUrl.replace(
+          /VID-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}/g,
+          'VID-[REDACTED]',
+        ),
         correlationId: req.headers?.['x-correlation-id'],
         userAgent: req.headers?.['user-agent'],
-        // Never log Authorization header
       };
     },
     res(res) {

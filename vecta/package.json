@@ -18,7 +18,8 @@
     "clean":      "turbo run clean && rm -rf node_modules",
     "db:migrate": "psql $DATABASE_URL -f packages/database/migrations/001_initial_schema.sql && psql $DATABASE_URL -f packages/database/migrations/002_plaid_connections.sql && psql $DATABASE_URL -f packages/database/migrations/003_compliance_trust.sql && psql $DATABASE_URL -f packages/database/migrations/004_compliance_network.sql",
     "docker:up":  "docker compose up -d",
-    "docker:down":"docker compose down"
+    "docker:down":"docker compose down",
+    "scripts:reencrypt-pii": "npm run reencrypt-pii --workspace=api-gateway"
   },
   "devDependencies": {
     "@types/jest":    "^29.5.12",

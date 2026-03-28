@@ -19,6 +19,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authMiddleware, requireKYC } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
+import type { VehicleData } from '../../../../services/compliance-service/src/vecta-underwriting.service';
+import type { ClaimSubmission } from '../../../../services/compliance-service/src/vecta-policy.service';
 
 const logger = createLogger('insurance-router');
 const router = Router();
@@ -75,17 +77,17 @@ router.post('/insurance/quote/renters', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 const vehicleSchema = z.object({
-  make:      z.string().min(1),
-  model:     z.string().min(1),
+  make:      z.string().trim().min(1).max(60).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+  model:     z.string().trim().min(1).max(60).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
   year:      z.number().int().min(1950).max(new Date().getFullYear() + 2),
-  vin:       z.string().optional(),
+  vin:       z.string().trim().max(32).optional(),
   usageType: z.enum(['PERSONAL', 'RIDESHARE']).default('PERSONAL'),
 });
 
 router.post('/insurance/quote/auto', async (req: Request, res: Response) => {
   try {
     const studentId   = (req as Request & { user: { id: string } }).user.id;
-    const vehicleData = vehicleSchema.parse(req.body);
+    const vehicleData = vehicleSchema.parse(req.body) as VehicleData;
     const underwriter = await getUnderwriting();
     const quote       = await underwriter.quoteAuto(studentId, vehicleData);
     const quoteId     = await underwriter.saveQuote(studentId, quote);
@@ -232,8 +234,8 @@ router.get('/insurance/card/:policyId', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 const claimSchema = z.object({
-  claimType:     z.string().min(2),
-  description:   z.string().min(10),
+  claimType:     z.string().trim().min(2).max(80).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
+  description:   z.string().trim().min(10).max(5000).transform((v) => v.replace(/<[^>]*>/g, '').replace(/[<>'"]/g, '')),
   incidentDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   amountCents:   z.number().int().positive().optional(),
   attachments:   z.array(z.string().url()).optional(),
@@ -243,7 +245,7 @@ router.post('/insurance/claim/:policyId', async (req: Request, res: Response) =>
   try {
     const studentId  = (req as Request & { user: { id: string } }).user.id;
     const { policyId } = req.params;
-    const claim      = claimSchema.parse(req.body);
+    const claim      = claimSchema.parse(req.body) as ClaimSubmission;
     const policyService = await getPolicyService();
     const claimId    = await policyService.submitClaim(policyId, studentId, claim);
 
@@ -268,10 +270,22 @@ router.post('/insurance/claim/:policyId', async (req: Request, res: Response) =>
 
 router.post('/insurance/health-plan/analyze', async (req: Request, res: Response) => {
   try {
+    const ct = req.headers['content-type'] ?? 'application/octet-stream';
+    let body: BodyInit;
+    if (Buffer.isBuffer(req.body)) {
+      body = req.body as unknown as BodyInit;
+    } else if (typeof req.body === 'object' && req.body !== null) {
+      body = JSON.stringify(req.body);
+    } else if (typeof req.body === 'string') {
+      body = req.body;
+    } else {
+      body = JSON.stringify({});
+    }
+
     const proxyRes = await fetch(`${COMPLIANCE_AI}/insurance/analyze-university-plan`, {
       method:  'POST',
-      headers: { 'Content-Type': req.headers['content-type'] ?? 'multipart/form-data' },
-      body:    req as unknown as BodyInit,
+      headers: { 'Content-Type': ct },
+      body,
     });
 
     const data = await proxyRes.json();

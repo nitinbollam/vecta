@@ -23,6 +23,7 @@ import {
 import { authMiddleware, requireKYC, requirePermission } from '@vecta/auth';
 import { createLogger, logComplianceEvent } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
+import { stripFreeText } from '../lib/sanitize';
 
 const logger = createLogger('mobility-router');
 const router = Router();
@@ -44,14 +45,14 @@ router.post('/vehicle/enroll', async (req: Request, res: Response) => {
       .object({
         vehicleVin:        z.string().min(17).max(17).toUpperCase(),
         vehicleYear:       z.number().int().min(2000).max(new Date().getFullYear() + 1),
-        vehicleMake:       z.string().max(50),
-        vehicleModel:      z.string().max(50),
+        vehicleMake:       z.string().trim().max(50).transform((v) => stripFreeText(v)),
+        vehicleModel:      z.string().trim().max(50).transform((v) => stripFreeText(v)),
         // All four consent booleans must be true — validated in service layer too
         consentStrictlyPassive:    z.literal(true),
         consentScheduleE:          z.literal(true),
         consentFlightRecorder:     z.literal(true),
         consentIndependentCounsel: z.literal(true),
-        consentVersion:            z.string().default('v1.0.0'),
+        consentVersion:            z.string().trim().max(32).transform((v) => stripFreeText(v)).optional().default('v1.0.0'),
       })
       .parse(req.body);
 
@@ -212,8 +213,8 @@ router.post('/dso-memo/generate', async (req: Request, res: Response) => {
     const studentId = req.vectaUser!.sub;
     const { dsoName, universityName } = z
       .object({
-        dsoName:       z.string().optional(),
-        universityName: z.string().optional(),
+        dsoName:        z.string().trim().max(200).transform((v) => stripFreeText(v)).optional(),
+        universityName: z.string().trim().max(200).transform((v) => stripFreeText(v)).optional(),
       })
       .parse(req.body);
 
