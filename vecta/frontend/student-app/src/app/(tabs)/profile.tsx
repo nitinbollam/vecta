@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme, type ThemeMode } from '../../context/ThemeContext';
-import { useStudentStore, useBalanceStore, useHousingStore, useMobilityStore } from '../../stores';
+import { useStudentStore, useHousingStore, useMobilityStore } from '../../stores';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
@@ -233,10 +233,22 @@ type ModuleItem = {
 
 function ModuleHealth() {
   const { colors }              = useTheme();
-  const { profile }             = useStudentStore();
-  const { balance }             = useBalanceStore();
-  const { trustScore, activeLoC } = useHousingStore();
+  const { profile, authToken }  = useStudentStore();
+  const { trustScore } = useHousingStore();
   const { vehicles }            = useMobilityStore();
+  const [repSummary, setRepSummary] = React.useState<{ score: number; tier: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!authToken) return;
+    fetch(`${require('../../config/api').API_V1_BASE}/reputation/score`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
+      .then((r) => r.json())
+      .then((d: { score?: number; tier?: string }) => {
+        if (typeof d.score === 'number' && d.tier) setRepSummary({ score: d.score, tier: d.tier });
+      })
+      .catch(() => {});
+  }, [authToken]);
 
   const modules: ModuleItem[] = [
     {
@@ -263,6 +275,13 @@ function ModuleHealth() {
       label: 'Housing',
       status: trustScore ? 'ok' : 'pending',
       detail: trustScore ? `Score: ${trustScore.score}` : 'Bank not linked',
+    },
+    {
+      icon: 'ribbon',
+      label: 'Reputation',
+      status: repSummary ? 'ok' : 'pending',
+      detail: repSummary ? `${repSummary.score} · ${repSummary.tier}` : 'Tap to build history',
+      onPress: () => router.push('/profile/reputation'),
     },
     {
       icon: 'car-sport',
@@ -293,7 +312,16 @@ function ModuleHealth() {
             <Ionicons name={icon} size={16} color={VectaColors.textSecondary} />
             <View style={{ flex: 1 }}>
               <Text style={healthStyle.itemLabel}>{label}</Text>
-              <Text style={healthStyle.itemDetail}>{detail}</Text>
+              <Text
+                style={[
+                  healthStyle.itemDetail,
+                  label === 'Reputation' && repSummary
+                    ? { color: '#00B8A4', fontFamily: VectaFonts.semiBold }
+                    : null,
+                ]}
+              >
+                {detail}
+              </Text>
             </View>
             {onPress && <Ionicons name="chevron-forward" size={12} color={VectaColors.textMuted} />}
           </TouchableOpacity>

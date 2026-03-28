@@ -64,6 +64,12 @@ export interface TrustAttributes {
   guaranteeTier:       'PLATINUM' | 'GOLD' | 'SILVER' | 'STANDARD' | 'INSUFFICIENT';
   maxRentApproval:     number;
   depositMultiplier:   number;
+
+  /** Optional — portable rent reputation (300–850 scale). */
+  reputationScore?:    number;
+  reputationTier?:     'BUILDING' | 'FAIR' | 'GOOD' | 'EXCELLENT';
+  onTimePayments?:     number;
+  monthsOfHistory?:    number;
 }
 
 /** Output of signCertificate — what gets stored and returned to landlords. */
@@ -169,6 +175,18 @@ export function canonicalise(attrs: TrustAttributes): string {
     // Checkr: only include if non-null
     ...(attrs.checkrStatus !== null && {
       checkrStatus: attrs.checkrStatus.toLowerCase(),
+    }),
+    ...(attrs.reputationScore !== undefined && {
+      reputationScore: String(attrs.reputationScore),
+    }),
+    ...(attrs.reputationTier !== undefined && {
+      reputationTier: attrs.reputationTier.toLowerCase(),
+    }),
+    ...(attrs.onTimePayments !== undefined && {
+      onTimePayments: String(attrs.onTimePayments),
+    }),
+    ...(attrs.monthsOfHistory !== undefined && {
+      monthsOfHistory: String(attrs.monthsOfHistory),
     }),
   };
 

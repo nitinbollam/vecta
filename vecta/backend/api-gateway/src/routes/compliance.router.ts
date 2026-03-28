@@ -20,6 +20,11 @@ import { z } from 'zod';
 import { createLogger } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
 import {
+  recordReputationEvent,
+  calculateReputationScore,
+  type ReputationEventType,
+} from '../../../services/compliance-service/src/reputation.service';
+import {
   getOpenCases,
   resolveCase,
   type CaseType,
@@ -233,6 +238,135 @@ router.get('/compliance/provider-health', officerAuth, async (req: Request, res:
   } catch (err) {
     logger.error({ err }, 'Provider health check failed');
     res.status(500).json({ error: 'HEALTH_CHECK_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Reputation (student + public landlord view)
+// ---------------------------------------------------------------------------
+
+router.post('/reputation/event', async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser?.sub;
+    if (!studentId) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+
+    const body = z.object({
+      eventType:   z.string(),
+      amountCents: z.number().int().optional(),
+      landlordId:  z.string().uuid().optional(),
+      metadata:    z.record(z.unknown()).optional(),
+    }).parse(req.body);
+
+    const eventType = body.eventType as ReputationEventType;
+    const allowed: ReputationEventType[] = [
+      'RENT_PAYMENT_ONTIME',
+      'RENT_PAYMENT_LATE',
+      'LEASE_COMPLETED',
+      'IDENTITY_VERIFIED',
+      'BANK_ACCOUNT_MAINTAINED',
+      'INSURANCE_MAINTAINED',
+      'VISA_RENEWED',
+      'UNIVERSITY_ENROLLED',
+      'ESIM_ACTIVE',
+      'REFERRAL_PLACED',
+    ];
+    if (!allowed.includes(eventType)) {
+      res.status(400).json({ error: 'INVALID_EVENT_TYPE' });
+      return;
+    }
+
+    await recordReputationEvent({
+      studentId,
+      eventType,
+      verifiedBy: 'VECTA',
+      amountCents: body.amountCents,
+      landlordId: body.landlordId,
+      metadata: body.metadata,
+    });
+
+    const score = await calculateReputationScore(studentId);
+    res.json({ success: true, score });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_PAYLOAD', details: err.flatten() });
+      return;
+    }
+    logger.error({ err }, 'Reputation event failed');
+    res.status(500).json({ error: 'REPUTATION_EVENT_FAILED' });
+  }
+});
+
+router.get('/reputation/score', async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser?.sub;
+    if (!studentId) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+
+    const score = await queryOne<Record<string, unknown>>(
+      'SELECT * FROM reputation_scores WHERE student_id = $1',
+      [studentId],
+    );
+
+    if (!score) {
+      res.json({
+        score: 300,
+        tier: 'BUILDING',
+        on_time_payments: 0,
+        total_payments: 0,
+        repayment_rate: 0,
+        months_of_history: 0,
+        message: 'Make your first rent payment to start building your reputation',
+      });
+      return;
+    }
+
+    res.json(score);
+  } catch (err) {
+    logger.error({ err }, 'Reputation score fetch failed');
+    res.status(500).json({ error: 'REPUTATION_SCORE_FAILED' });
+  }
+});
+
+router.get('/reputation/score/:studentId', async (req: Request, res: Response) => {
+  try {
+    const { studentId } = z.object({ studentId: z.string().uuid() }).parse(req.params);
+
+    const score = await queryOne<{
+      score: number;
+      tier: string;
+      on_time_payments: number;
+      months_of_history: number;
+      last_calculated: string;
+    }>(
+      `SELECT score, tier, on_time_payments, months_of_history, last_calculated
+       FROM reputation_scores WHERE student_id = $1`,
+      [studentId],
+    );
+
+    if (!score) {
+      res.json({ score: 300, tier: 'BUILDING', monthsOfHistory: 0 });
+      return;
+    }
+
+    res.json({
+      score:           score.score,
+      tier:            score.tier,
+      monthsOfHistory: score.months_of_history,
+      verifiedAt:      score.last_calculated,
+      issuer:          'Vecta Financial Services LLC',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_STUDENT_ID' });
+      return;
+    }
+    logger.error({ err }, 'Public reputation fetch failed');
+    res.status(500).json({ error: 'REPUTATION_PUBLIC_FAILED' });
   }
 });
 

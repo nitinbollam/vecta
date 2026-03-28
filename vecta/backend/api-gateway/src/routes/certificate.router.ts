@@ -34,8 +34,11 @@ import { query, queryOne, withTransaction } from '@vecta/database';
 import {
   signCertificate,
   verifyCertificate,
+  wrapAsVerifiableCredential,
+  verifyVerifiableCredential,
   type TrustAttributes,
   type SignedTrustCertificate,
+  type VectaVerifiableCredential,
 } from '@vecta/auth';
 
 const logger = createLogger('certificate-router');
@@ -187,6 +190,146 @@ async function aggregateTrustData(studentId: string): Promise<CertificateRow | n
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/v1/certificate/me/reputation-vc — authenticated W3C VC (reputation)
+// ---------------------------------------------------------------------------
+
+router.get('/certificate/me/reputation-vc', async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser?.sub;
+    if (!studentId) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+
+    const row = await queryOne<{
+      certificate_json: unknown;
+    }>(
+      `SELECT certificate_json
+       FROM tenant_trust_certificates
+       WHERE student_id = $1 AND cert_status != 'INVALID' AND expires_at > NOW()
+       ORDER BY issued_at DESC NULLS LAST
+       LIMIT 1`,
+      [studentId],
+    );
+
+    if (!row?.certificate_json) {
+      res.status(404).json({ error: 'NO_CERTIFICATE' });
+      return;
+    }
+
+    const signedCert = (typeof row.certificate_json === 'string'
+      ? JSON.parse(row.certificate_json)
+      : row.certificate_json) as SignedTrustCertificate;
+
+    const vc = wrapAsVerifiableCredential(
+      signedCert,
+      studentId,
+      'ReputationScoreCredential',
+      process.env.NEXT_PUBLIC_APP_URL ?? 'https://verify.vecta.io',
+    );
+
+    res
+      .set('Content-Type', 'application/ld+json')
+      .set('Cache-Control', 'private, no-store')
+      .json(vc);
+  } catch (err) {
+    logger.error({ err }, 'Reputation VC generation failed');
+    res.status(500).json({ error: 'VC_GENERATION_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/certificate/:certId/vc — W3C Verifiable Credential (public)
+// ---------------------------------------------------------------------------
+
+router.get('/certificate/:certId/vc', async (req: Request, res: Response) => {
+  try {
+    const { certId } = z.object({ certId: z.string().uuid() }).parse(req.params);
+
+    const cert = await queryOne<{
+      certificate_json: unknown;
+      student_id: string;
+      expires_at: string;
+      cert_status: string;
+    }>(
+      `SELECT c.certificate_json, c.student_id, c.expires_at, c.cert_status
+       FROM tenant_trust_certificates c
+       WHERE c.cert_id = $1 AND c.cert_status != 'INVALID'`,
+      [certId],
+    );
+
+    if (!cert) {
+      res.status(404).json({ error: 'CERTIFICATE_NOT_FOUND' });
+      return;
+    }
+
+    if (new Date(cert.expires_at) < new Date()) {
+      res.status(410).json({ error: 'CERTIFICATE_EXPIRED' });
+      return;
+    }
+
+    if (!cert.certificate_json) {
+      res.status(404).json({ error: 'VC_NOT_AVAILABLE' });
+      return;
+    }
+
+    const signedCert = (typeof cert.certificate_json === 'string'
+      ? JSON.parse(cert.certificate_json)
+      : cert.certificate_json) as SignedTrustCertificate;
+
+    const vc = wrapAsVerifiableCredential(
+      signedCert,
+      cert.student_id,
+      'TenantProofCredential',
+      process.env.NEXT_PUBLIC_APP_URL ?? 'https://verify.vecta.io',
+    );
+
+    res
+      .set('Content-Type', 'application/ld+json')
+      .set('Cache-Control', 'private, max-age=300')
+      .json(vc);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_CERT_ID' });
+      return;
+    }
+    logger.error({ err }, 'VC generation failed');
+    res.status(500).json({ error: 'VC_GENERATION_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/certificate/verify-vc
+// ---------------------------------------------------------------------------
+
+router.post('/certificate/verify-vc', verifyRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const body = req.body as { vc?: VectaVerifiableCredential } | VectaVerifiableCredential;
+    const vc = (body && typeof body === 'object' && 'vc' in body && body.vc
+      ? body.vc
+      : body) as VectaVerifiableCredential;
+
+    const result = verifyVerifiableCredential(vc);
+
+    res.json({
+      valid:    result.valid,
+      reason:   result.reason,
+      verified: result.valid
+        ? {
+            credentialType: vc.type[1],
+            issuer:         vc.issuer,
+            subject:        vc.credentialSubject,
+            issuedAt:       vc.issuanceDate,
+            expiresAt:      vc.expirationDate,
+          }
+        : null,
+    });
+  } catch {
+    res.status(400).json({ error: 'INVALID_VC_FORMAT' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/v1/certificate/:token
 // ---------------------------------------------------------------------------
 
@@ -331,6 +474,24 @@ router.get('/certificate/:token', async (req: Request, res: Response) => {
         depositMultiplier:  row.deposit_multiplier ?? 2.0,
       };
 
+      const repRes = await client.query<{
+        score: number;
+        tier: string;
+        on_time_payments: number;
+        months_of_history: number;
+      }>(
+        `SELECT score, tier, on_time_payments, months_of_history
+         FROM reputation_scores WHERE student_id = $1`,
+        [studentId],
+      );
+      const rep = repRes.rows[0];
+      if (rep) {
+        attrs.reputationScore   = rep.score;
+        attrs.reputationTier    = rep.tier as TrustAttributes['reputationTier'];
+        attrs.onTimePayments    = rep.on_time_payments;
+        attrs.monthsOfHistory   = rep.months_of_history;
+      }
+
       // 3g. Sign certificate
       const cert = await signCertificate(attrs);
 
@@ -338,8 +499,8 @@ router.get('/certificate/:token', async (req: Request, res: Response) => {
       await client.query(
         `INSERT INTO tenant_trust_certificates
            (cert_id, student_id, cert_status, canonical_hash, signature,
-            public_key_hex, issued_at, expires_at, landlord_ip, landlord_email)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            public_key_hex, issued_at, expires_at, landlord_ip, landlord_email, certificate_json)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
          ON CONFLICT (cert_id) DO NOTHING`,
         [
           cert.certId,
@@ -352,6 +513,7 @@ router.get('/certificate/:token', async (req: Request, res: Response) => {
           cert.expiresAt,
           landlordIp,
           landlordEmail ?? null,
+          JSON.stringify(cert),
         ],
       );
 

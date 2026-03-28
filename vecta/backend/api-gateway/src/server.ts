@@ -316,6 +316,7 @@ async function bootstrap() {
     { mountPath: "/api/v1/identity",  module: "./routes/identity.router",    exportKey: "identityRouter",    service: "didit",    extraMiddleware: tokenRateLimiter },
     { mountPath: "/api/v1/housing",   module: "./routes/housing.router",     exportKey: "housingRouter",     service: "plaid"    },
     { mountPath: "/api/v1/mobility",  module: "./routes/mobility.router",    exportKey: "mobilityRouter",    service: "unit"     },
+    { mountPath: "/api/v1/banking",   module: "./routes/banking.router",     exportKey: "bankingRouter",     service: "unit"     },
     { mountPath: "/api/v1",           module: "./routes/token.router",       exportKey: "tokenRouter",       service: "didit"    },
     { mountPath: "/api/v1",           module: "./routes/auth.router",        exportKey: "authRouter",        service: "sendgrid" },
     { mountPath: "/api/v1",           module: "./routes/insurance.router",   exportKey: "insuranceRouter",   service: "lemonade" },

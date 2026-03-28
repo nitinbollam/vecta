@@ -21,8 +21,9 @@ import { z } from 'zod';
 import { identityService, mintVectaIDToken, verifyVectaIDToken } from '../../../services/identity-service/src/didit.service';
 import type { VectaIDVerifyRequest } from '../../../services/identity-service/src/vecta-id.service';
 import { baasService } from '../../../services/identity-service/src/unit.service';
-import { authMiddleware, requireKYC } from '@vecta/auth';
+import { authMiddleware, requireKYC, getKeyRegistry, base58Encode } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
+import { queryOne } from '@vecta/database';
 const logger = createLogger('identity-router');
 const router = Router();
 
@@ -499,6 +500,84 @@ router.get('/verify/:vectaIdNumber', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'Public verify failed');
     res.status(500).json({ valid: false, error: 'VERIFY_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/identity/did/:studentId — public DID document (method did:vecta)
+// ---------------------------------------------------------------------------
+
+router.get('/did/:studentId', async (req: Request, res: Response) => {
+  try {
+    const { studentId } = z.object({ studentId: z.string().uuid() }).parse(req.params);
+
+    const student = await queryOne<{
+      id: string;
+      kyc_status: string;
+    }>(
+      `SELECT id, kyc_status FROM students WHERE id = $1`,
+      [studentId],
+    );
+
+    if (!student || student.kyc_status !== 'APPROVED') {
+      res.status(404).json({ error: 'DID_NOT_FOUND' });
+      return;
+    }
+
+    const registry = getKeyRegistry();
+    const keyId  = registry.getCurrentKeyId();
+    const pubKey = registry.getPublicKey(keyId);
+    if (!pubKey) {
+      res.status(503).json({ error: 'KEYS_UNAVAILABLE' });
+      return;
+    }
+
+    const der    = Buffer.from(pubKey.publicKeyHex, 'hex');
+    const raw32  = der.subarray(12, 44);
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://verify.vecta.io';
+
+    const didDocument = {
+      '@context': [
+        'https://www.w3.org/ns/did/v1',
+        'https://w3id.org/security/suites/ed25519-2020/v1',
+      ],
+      id:         `did:vecta:${studentId}`,
+      controller: 'did:vecta:vecta-financial-services',
+      verificationMethod: [
+        {
+          id:                 `did:vecta:${studentId}#key-1`,
+          type:               'Ed25519VerificationKey2020',
+          controller:         `did:vecta:${studentId}`,
+          publicKeyMultibase: `z${base58Encode(raw32)}`,
+        },
+      ],
+      authentication:  [`did:vecta:${studentId}#key-1`],
+      assertionMethod: [`did:vecta:${studentId}#key-1`],
+      service: [
+        {
+          id:              `did:vecta:${studentId}#vecta-credential-service`,
+          type:            'VectaCredentialService',
+          serviceEndpoint: `${baseUrl.replace(/\/+$/, '')}/api/v1/certificate/verify`,
+        },
+        {
+          id:              `did:vecta:${studentId}#vecta-reputation`,
+          type:            'VectaReputationService',
+          serviceEndpoint: `${baseUrl.replace(/\/+$/, '')}/api/v1/reputation/score/${studentId}`,
+        },
+      ],
+    };
+
+    res
+      .set('Content-Type', 'application/did+ld+json')
+      .set('Cache-Control', 'public, max-age=3600')
+      .json(didDocument);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_STUDENT_ID' });
+      return;
+    }
+    logger.error({ err }, 'DID document failed');
+    res.status(500).json({ error: 'DID_FAILED' });
   }
 });
 

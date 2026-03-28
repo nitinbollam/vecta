@@ -46,7 +46,7 @@ async function getLedger() {
 
 router.get('/account', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const ledger    = await getLedger();
 
     let account = await ledger.getAccount(studentId);
@@ -78,7 +78,7 @@ router.get('/account', authMiddleware, requireKYC, async (req: Request, res: Res
 
 router.get('/balance', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const ledger    = await getLedger();
 
     const account = await ledger.getAccount(studentId);
@@ -108,7 +108,7 @@ router.get('/balance', authMiddleware, requireKYC, async (req: Request, res: Res
 
 router.get('/transactions', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const limit     = Math.min(Number(req.query.limit ?? 50), 200);
     const ledger    = await getLedger();
 
@@ -154,7 +154,7 @@ const transferSchema = z.object({
 
 router.post('/transfer', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const params    = transferSchema.parse(req.body);
     const ledger    = await getLedger();
 
@@ -198,7 +198,7 @@ router.post('/transfer', authMiddleware, requireKYC, async (req: Request, res: R
 
 router.get('/card', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const ledger    = await getLedger();
 
     const account = await ledger.getAccount(studentId);
@@ -227,9 +227,90 @@ router.get('/card', authMiddleware, requireKYC, async (req: Request, res: Respon
 // POST /api/v1/banking/card/issue
 // ---------------------------------------------------------------------------
 
+router.post('/escrow/hold', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser!.sub;
+    const { VectaEscrowService } = await import('../../../services/banking-service/src/escrow.service');
+    const body = z.object({
+      landlordId:       z.string().uuid(),
+      leaseAppId:       z.string().uuid(),
+      amountCents:      z.number().int().positive(),
+      releaseCondition: z.enum(['LEASE_SIGNED', 'MOVE_IN_DATE', 'MANUAL']),
+      releaseDate:      z.string().optional(),
+    }).parse(req.body);
+
+    const escrow = new VectaEscrowService();
+    const escrowId = await escrow.holdRentInEscrow({
+      studentId,
+      landlordId: body.landlordId,
+      leaseAppId: body.leaseAppId,
+      amountCents: body.amountCents,
+      releaseCondition: body.releaseCondition,
+      releaseDate: body.releaseDate ? new Date(body.releaseDate) : undefined,
+    });
+
+    res.json({ escrowId, status: 'HELD', message: 'First month rent secured in escrow' });
+  } catch (err) {
+    if ((err as Error).message === 'INSUFFICIENT_FUNDS') {
+      res.status(402).json({ error: 'INSUFFICIENT_FUNDS' });
+      return;
+    }
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_PAYLOAD', details: err.flatten() });
+      return;
+    }
+    logger.error({ err }, '[Banking] Escrow hold failed');
+    res.status(500).json({ error: 'ESCROW_HOLD_FAILED' });
+  }
+});
+
+router.post('/escrow/:escrowId/release', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { escrowId } = z.object({ escrowId: z.string().uuid() }).parse(req.params);
+    const { note } = z.object({ note: z.string().max(500).optional() }).parse(req.body ?? {});
+    const { VectaEscrowService } = await import('../../../services/banking-service/src/escrow.service');
+    const escrow = new VectaEscrowService();
+    await escrow.releaseToLandlord(escrowId, note ?? 'Lease confirmed');
+    res.json({ success: true, message: 'Escrow released to landlord' });
+  } catch (err) {
+    if ((err as Error).message === 'ESCROW_NOT_FOUND_OR_ALREADY_RELEASED') {
+      res.status(404).json({ error: 'ESCROW_NOT_FOUND' });
+      return;
+    }
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_PAYLOAD' });
+      return;
+    }
+    logger.error({ err }, '[Banking] Escrow release failed');
+    res.status(500).json({ error: 'ESCROW_RELEASE_FAILED' });
+  }
+});
+
+router.post('/escrow/:escrowId/refund', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { escrowId } = z.object({ escrowId: z.string().uuid() }).parse(req.params);
+    const { reason } = z.object({ reason: z.string().max(500).optional() }).parse(req.body ?? {});
+    const { VectaEscrowService } = await import('../../../services/banking-service/src/escrow.service');
+    const escrow = new VectaEscrowService();
+    await escrow.refundToStudent(escrowId, reason ?? 'Refunded by student request');
+    res.json({ success: true, message: 'Escrow refunded to student' });
+  } catch (err) {
+    if ((err as Error).message === 'ESCROW_NOT_FOUND_OR_ALREADY_RELEASED') {
+      res.status(404).json({ error: 'ESCROW_NOT_FOUND' });
+      return;
+    }
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_PAYLOAD' });
+      return;
+    }
+    logger.error({ err }, '[Banking] Escrow refund failed');
+    res.status(500).json({ error: 'ESCROW_REFUND_FAILED' });
+  }
+});
+
 router.post('/card/issue', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
-    const studentId = (req as Request & { user: { id: string } }).user.id;
+    const studentId = req.vectaUser!.sub;
     const ledger    = await getLedger();
 
     const account = await ledger.getAccount(studentId);

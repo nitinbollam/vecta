@@ -76,6 +76,7 @@ export function isUnauthenticatedPublicApiV1Route(req: Request): boolean {
     "/api/v1/landlord/onboard",
     "/api/v1/landlord/acceptance",
     "/api/v1/certificate/verify",
+    "/api/v1/certificate/verify-vc",
     "/api/v1/protocol/verify",
   ]);
 
@@ -86,6 +87,9 @@ export function isUnauthenticatedPublicApiV1Route(req: Request): boolean {
     if (path === "/api/v1/landlord/social-proof") return true;
     if (/^\/api\/v1\/landlord\/comparable\/[^/]+$/.test(path)) return true;
     if (/^\/api\/v1\/certificate\/[^/]+$/.test(path)) return true;
+    if (/^\/api\/v1\/certificate\/[0-9a-f-]{36}\/vc$/i.test(path)) return true;
+    if (/^\/api\/v1\/reputation\/score\/[0-9a-f-]{36}$/i.test(path)) return true;
+    if (/^\/api\/v1\/identity\/did\/[0-9a-f-]{36}$/i.test(path)) return true;
     if (path === "/api/v1/protocol/liquidity/pools") return true;
     if (path === "/api/v1/keys/jwks") return true;
     if (path === "/api/v1/keys/rotate-status") return true;

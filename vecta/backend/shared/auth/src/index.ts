@@ -103,3 +103,15 @@ export {
 
 // Internal HMAC request signing (service-to-service)
 export { signInternalRequest, verifyInternalRequest } from './internal-request-signer';
+
+// W3C Verifiable Credentials wrapper
+export {
+  wrapAsVerifiableCredential,
+  verifyVerifiableCredential,
+  base58Encode,
+  base58DecodeToHex,
+  type VectaVerifiableCredential,
+  type VectaCredentialType,
+  type VectaCredentialSubject,
+  type VectaProof,
+} from './verifiable-credential';

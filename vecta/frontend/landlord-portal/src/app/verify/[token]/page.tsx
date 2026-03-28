@@ -32,6 +32,10 @@ interface TrustAttributes {
   guaranteeTier: 'PLATINUM' | 'GOLD' | 'SILVER' | 'STANDARD' | 'INSUFFICIENT';
   maxRentApproval: number;
   depositMultiplier: number;
+  reputationScore?: number;
+  reputationTier?: 'BUILDING' | 'FAIR' | 'GOOD' | 'EXCELLENT';
+  onTimePayments?: number;
+  monthsOfHistory?: number;
 }
 
 interface SignedTrustCertificate {
@@ -343,6 +347,34 @@ export default async function TrustCertificatePage({ params }: { params: { token
             </div>
           </div>
         </div>
+
+        {typeof a.reputationScore === 'number' ? (
+          <div className="bg-white rounded-3xl border border-teal-100 shadow-sm p-6">
+            <h2 className="text-xs font-bold text-teal-700 uppercase tracking-wider mb-3">
+              Vecta Reputation Score
+            </h2>
+            <div className="flex flex-wrap items-end gap-4">
+              <p className="text-4xl font-extrabold text-[#00B8A4]">{a.reputationScore}</p>
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-100">
+                {a.reputationTier ?? 'BUILDING'}
+              </span>
+            </div>
+            <p className="text-sm text-slate-600 mt-3">
+              {(a.onTimePayments ?? 0).toLocaleString()} on-time payments ·{' '}
+              {(a.monthsOfHistory ?? 0).toLocaleString()} months history
+            </p>
+            <p className="text-xs text-teal-800 font-semibold mt-2">
+              Anchored to public record · Verified by Vecta
+            </p>
+            <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+              This score is built from verified rent payment history, not self-reported data.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-sm text-slate-600">
+            New to Vecta — reputation building in progress
+          </div>
+        )}
 
         {/* Contingent warning */}
         {certStatus === 'CONTINGENT' && (
