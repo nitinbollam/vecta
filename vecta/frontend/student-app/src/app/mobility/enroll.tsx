@@ -16,11 +16,10 @@ import {
   Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { useStudentStore } from "@/store/student.store";
 import { VectaColors, VectaFonts } from "@/constants/design";
-import { API_V1_BASE } from "@/config/api";
+import { API_V1_BASE, getAuthHeaders } from "@/config/api";
 import { useTheme } from "@/context/ThemeContext";
 
 interface ConsentClauses {
@@ -55,8 +54,6 @@ const DISCLAIMER_CLAUSES = [
 
 export default function VehicleEnrollmentScreen() {
   const { colors }  = useTheme();
-  const authToken   = useStudentStore((s) => s.authToken);
-  const profile     = useStudentStore((s) => s.profile);
   const [clauses, setClauses] = useState<ConsentClauses>({
     strictlyPassive: false,
     taxClassification: false,
@@ -91,30 +88,15 @@ export default function VehicleEnrollmentScreen() {
           onPress: async () => {
             setSubmitting(true);
             try {
-              const res = await fetch(
-                `${API_V1_BASE}/mobility/enroll-vehicle`,
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${authToken}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    studentId: profile?.id,
-                    consentClauses: {
-                      strictlyPassiveAcknowledged: clauses.strictlyPassive,
-                      taxClassificationAcknowledged: clauses.taxClassification,
-                      flightRecorderConsentAcknowledged: clauses.flightRecorder,
-                      independentCounselWaiverAcknowledged: clauses.independentCounsel,
-                    },
-                    // Vehicle details collected on the previous screen (via route params)
-                    tosVersion: "2.1.0",
-                  }),
-                }
-              );
+              const headers = await getAuthHeaders();
+              const res = await fetch(`${API_V1_BASE}/mobility/enroll`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ consentGiven: true }),
+              });
 
               if (!res.ok) {
-                const errData = await res.json();
+                const errData = (await res.json().catch(() => ({}))) as { message?: string };
                 throw new Error(errData.message ?? "Enrollment failed");
               }
 

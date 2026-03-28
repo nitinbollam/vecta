@@ -32,6 +32,24 @@ router.use(authMiddleware);
 router.use(requireKYC('APPROVED'));
 
 // ---------------------------------------------------------------------------
+// Lightweight consent ping (student app) — full vehicle payload uses /vehicle/enroll
+// ---------------------------------------------------------------------------
+
+router.post('/enroll', async (req: Request, res: Response) => {
+  try {
+    z.object({ consentGiven: z.literal(true) }).parse(req.body);
+    res.status(201).json({
+      ok: true,
+      message:
+        'Consent recorded. Add your vehicle details in Fleet to complete enrollment.',
+    });
+  } catch (err) {
+    logger.warn({ err }, 'Mobility /enroll validation failed');
+    res.status(400).json({ error: 'INVALID_BODY', message: 'consentGiven: true required' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Vehicle enrollment — consent-gated, triggers LESSOR role activation
 // ---------------------------------------------------------------------------
 

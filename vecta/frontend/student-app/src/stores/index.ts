@@ -64,6 +64,8 @@ export interface StudentProfile {
 interface StudentState {
   profile: StudentProfile | null;
   authToken: string | null;
+  /** Optional ACH display — populated when banking exposes routing/account */
+  bankAccount?: { routingNumber: string; accountNumber: string };
   isLoading: boolean;
   error: string | null;
   // Actions
@@ -83,9 +85,16 @@ export const useStudentStore = create<StudentState>()(
       isLoading: false,
       error:     null,
 
-      setAuthToken: (token) => set({ authToken: token }),
+      setAuthToken: (token) => {
+        set({ authToken: token });
+        if (token) void AsyncStorage.setItem('auth_token', token);
+        else void AsyncStorage.removeItem('auth_token');
+      },
 
-      setProfile: (profile) => set({ profile }),
+      setProfile: (profile) => {
+        if (profile?.id) void AsyncStorage.setItem('student_id', profile.id);
+        set({ profile });
+      },
 
       fetchProfile: async () => {
         const token = get().authToken;
@@ -132,8 +141,16 @@ export const useStudentStore = create<StudentState>()(
         }
       },
 
-      clearSession: () =>
-        set({ profile: null, authToken: null, error: null }),
+      clearSession: () => {
+        void AsyncStorage.multiRemove([
+          'auth_token',
+          'student_id',
+          'push_notifications_enabled',
+          'biometric_auth_enabled',
+          'preferred_language',
+        ]);
+        set({ profile: null, authToken: null, error: null });
+      },
     }),
     {
       name: 'vecta-student-store',

@@ -5,8 +5,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl,
+  RefreshControl, Alert,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useStudentStore, useBalanceStore, type MaskedBalance } from '../../stores';
@@ -165,33 +167,46 @@ export default function BankingScreen() {
             icon: 'arrow-down-circle' as const,
             label: 'Add Money',
             color: VectaColors.success,
-            onPress: () => Alert.alert(
-              'Add Money via ACH',
-              `Transfer funds to your Vecta account.\n\nRouting: 084106768\nAccount ending: ••••${balance?.unitAccountLast4 ?? '????'}\n\nACH transfers typically arrive in 1–3 business days.`,
-              [{ text: 'Got it' }],
-            ),
+            onPress: () => {
+              const store = useStudentStore.getState();
+              const routing = store.bankAccount?.routingNumber ?? 'Contact support';
+              const account = store.bankAccount?.accountNumber ?? 'Contact support';
+              Alert.alert(
+                'Add Money via ACH',
+                `Transfer funds to your Vecta account:\n\nRouting Number: ${routing}\nAccount Number: ${account}\n\nProcessing time: 1-3 business days`,
+                [
+                  { text: 'Copy Routing', onPress: () => void Clipboard.setStringAsync(routing) },
+                  { text: 'Copy Account', onPress: () => void Clipboard.setStringAsync(account) },
+                  { text: 'Done' },
+                ],
+              );
+            },
           },
           {
             icon: 'arrow-up-circle' as const,
             label: 'Send',
             color: VectaColors.banking,
-            onPress: () => Alert.alert('Coming Soon', 'P2P transfers are coming in the next update.'),
+            onPress: () =>
+              Alert.alert(
+                'Send Money',
+                'P2P transfers are coming in the next update. For now, use ACH transfers.',
+              ),
           },
           {
             icon: 'swap-horizontal' as const,
             label: 'Exchange',
             color: VectaColors.mobility,
-            onPress: () => Alert.alert('Coming Soon', 'Currency exchange is coming in the next update.'),
+            onPress: () =>
+              Alert.alert(
+                'Currency Exchange',
+                'Currency exchange is coming in the next update.',
+              ),
           },
           {
             icon: 'qr-code' as const,
             label: 'My QR',
             color: VectaColors.primary,
-            onPress: () => Alert.alert(
-              'Your Account QR',
-              `Account ending: ••••${balance?.unitAccountLast4 ?? '????'}\n\nShow this QR code to receive payments directly to your Vecta account.`,
-              [{ text: 'Close' }],
-            ),
+            onPress: () => router.push('/profile/vecta-id'),
           },
         ].map(({ icon, label, color, onPress }) => (
           <TouchableOpacity key={label} style={{ alignItems: 'center', gap: 6 }} activeOpacity={0.8} onPress={onPress}>

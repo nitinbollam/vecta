@@ -22,6 +22,7 @@ import {
 } from '@expo-google-fonts/dm-sans';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStudentStore } from '../stores';
 import { API_V1_BASE } from '../config/api';
 import { ThemeProvider } from '../context/ThemeContext';
@@ -58,8 +59,10 @@ function useMagicLinkHandler() {
         return;
       }
 
-      const { token: authToken } = await res.json() as { token: string };
-      setAuthToken(authToken);
+      const data = await res.json() as { token: string; studentId?: string; id?: string };
+      await AsyncStorage.setItem('auth_token', data.token);
+      await AsyncStorage.setItem('student_id', data.studentId ?? data.id ?? '');
+      setAuthToken(data.token);
       await fetchProfile();
       router.replace('/(tabs)');
     } catch {

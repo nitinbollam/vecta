@@ -25,6 +25,7 @@ export {
 // Express JWT middleware + permission guards
 export {
   authMiddleware,
+  authMiddlewareOptional,
   requirePermission,
   requireKYC,
   requireLandlordRole,

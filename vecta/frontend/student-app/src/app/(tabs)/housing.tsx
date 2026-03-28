@@ -13,10 +13,12 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, TextInput, Alert, Share,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useHousingStore, useStudentStore } from '../../stores';
+import { API_V1_BASE, getAuthHeaders } from '../../config/api';
 import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius,
   VectaGradients, VectaShadows,
@@ -202,6 +204,29 @@ export default function HousingScreen() {
   const { trustScore, isLoading, fetchTrustScore } = useHousingStore();
   const [refreshing, setRefreshing]              = useState(false);
 
+  const handleQuickLoc = useCallback(async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_V1_BASE}/housing/loc/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ monthlyRent: 1500 }),
+      });
+      const data = await res.json() as { pdfUrl?: string; downloadUrl?: string };
+      const pdfUrl = data.pdfUrl ?? data.downloadUrl;
+      if (pdfUrl) {
+        await Linking.openURL(pdfUrl);
+      } else {
+        Alert.alert(
+          'Letter of Credit',
+          'Connect your bank account first to generate a Letter of Credit.',
+        );
+      }
+    } catch {
+      Alert.alert('Error', 'Network error. Please try again.');
+    }
+  }, []);
+
   useEffect(() => { fetchTrustScore(); }, [fetchTrustScore]);
 
   const onRefresh = async () => {
@@ -254,18 +279,43 @@ export default function HousingScreen() {
           title="AI Roommate Finder"
           subtitle="pgvector · Lifestyle Match"
           status="active"
-          onPress={() => {}}
+          onPress={() => router.push('/onboarding/plaid-link')}
         >
           <Text style={{ fontFamily: VectaFonts.regular, fontSize: VectaFonts.sm, color: VectaColors.textSecondary }}>
             Find compatible roommates at your university based on lifestyle, budget, and move-in date.
           </Text>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: VectaSpacing['2'] }}>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: VectaSpacing['2'] }}
+            onPress={() => router.push('/housing/roommate')}
+          >
             <Ionicons name="people" size={16} color={VectaColors.housing} />
             <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.sm, color: VectaColors.housing }}>
               Set Roommate Preferences →
             </Text>
           </TouchableOpacity>
         </ModuleCard>
+
+        <TouchableOpacity
+          onPress={handleQuickLoc}
+          style={{
+            marginTop: VectaSpacing['3'],
+            marginHorizontal: VectaSpacing['4'],
+            padding: VectaSpacing['4'],
+            backgroundColor: VectaColors.housingBg,
+            borderRadius: VectaRadius.lg,
+            borderWidth: 1,
+            borderColor: VectaColors.housing,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          <Ionicons name="document-text" size={18} color={VectaColors.housing} />
+          <Text style={{ fontFamily: VectaFonts.bold, fontSize: VectaFonts.sm, color: VectaColors.housing }}>
+            Generate Letter of Credit
+          </Text>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </View>

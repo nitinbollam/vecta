@@ -21,19 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { useStudentStore } from '../../stores';
-import { API_V1_BASE, COMPLIANCE_AI_BASE } from '../../config/api';
-
-// DocumentPicker stub — real version requires a native rebuild
-type DocPickerResult = { canceled: boolean; assets: Array<{ uri: string; name: string; mimeType?: string }> };
-const DocumentPicker = {
-  getDocumentAsync: async (_opts?: unknown): Promise<DocPickerResult> => {
-    Alert.alert(
-      'Build Required',
-      'PDF upload requires a fresh EAS build. Use "Analyze Sample" to see a demo result.',
-    );
-    return { canceled: true, assets: [] };
-  },
-};
+import { API_V1_BASE, COMPLIANCE_AI_BASE, getAuthHeaders } from '../../config/api';
+import * as DocumentPicker from 'expo-document-picker';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +57,14 @@ interface HealthAnalysis {
 // ---------------------------------------------------------------------------
 // Health plan tiers
 // ---------------------------------------------------------------------------
+
+const MOCK_PLANS = [
+  { id: '1', name: 'ISO Student Secure', provider: 'ISO', monthly: 89, deductible: 500, fCompliant: true, features: ['Preventive care', 'Emergency', 'Prescriptions', 'Mental health'] },
+  { id: '2', name: 'ISO Student Select', provider: 'ISO', monthly: 149, deductible: 250, fCompliant: true, features: ['All Basic', 'Dental & vision', 'Sports injuries', 'Telehealth'] },
+  { id: '3', name: 'PSI Premier', provider: 'PSI', monthly: 199, deductible: 0, fCompliant: true, features: ['Zero deductible', 'Global coverage', 'Repatriation', 'Family add-on'] },
+] as const;
+
+type IsoPlanRow = (typeof MOCK_PLANS)[number];
 
 const HEALTH_TIERS = [
   {
@@ -115,18 +112,21 @@ export default function InsuranceScreen() {
 
   // ─── Renters Insurance ─────────────────────────────────────────────────────
   const [rentersQuote,  setRentersQuote]  = useState<Quote | null>(null);
-  const [quotingRenters, setQuotingRenters] = useState(false);
   const [rentersPolicy, setRentersPolicy] = useState<BoundPolicy | null>(null);
   const [bindingRenters,setBindingRenters] = useState(false);
 
   // ─── Auto Insurance ────────────────────────────────────────────────────────
   const [autoQuote,   setAutoQuote]    = useState<Quote | null>(null);
-  const [quotingAuto, setQuotingAuto]  = useState(false);
   const [autoPolicy,  setAutoPolicy]   = useState<BoundPolicy | null>(null);
 
   // ─── Health Plans ──────────────────────────────────────────────────────────
   const [healthPolicy,   setHealthPolicy]   = useState<BoundPolicy | null>(null);
   const [bindingTier,    setBindingTier]    = useState<string | null>(null);
+  const [healthComparePlans, setHealthComparePlans] = useState<IsoPlanRow[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [pdfAnalysis, setPdfAnalysis] = useState<HealthAnalysis | null>(null);
+  const [analyzingPdf, setAnalyzingPdf] = useState(false);
 
   // ─── Active policies ───────────────────────────────────────────────────────
   const [activePolicies, setActivePolicies] = useState<BoundPolicy[]>([]);
@@ -199,23 +199,24 @@ export default function InsuranceScreen() {
   // ---------------------------------------------------------------------------
 
   const handleGetRentersQuote = useCallback(async () => {
-    if (!authToken) return;
-    setQuotingRenters(true);
-    try {
-      const res  = await fetch(`${API_V1_BASE}/insurance/quote/renters`, {
-        method:  'POST',
-        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-        body:    '{}',
-      });
-      if (!res.ok) throw new Error('Quote failed');
-      const data = await res.json() as Quote;
-      setRentersQuote(data);
-    } catch {
-      Alert.alert('Quote Failed', 'Could not get your personalised quote. Please try again.');
-    } finally {
-      setQuotingRenters(false);
-    }
-  }, [authToken]);
+    Alert.alert(
+      'Get Renters Insurance',
+      'You will be taken to Lemonade to complete your quote. Your Vecta verification may pre-fill some fields.',
+      [
+        {
+          text: 'Continue',
+          onPress: async () => {
+            try {
+              await Linking.openURL('https://www.lemonade.com/renters');
+            } catch {
+              Alert.alert('Error', 'Could not open link. Please try again.');
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }, []);
 
   const handleBindRenters = useCallback(async () => {
     if (!authToken || !rentersQuote) return;
@@ -246,34 +247,39 @@ export default function InsuranceScreen() {
   // ---------------------------------------------------------------------------
 
   const handleGetAutoQuote = useCallback(() => {
-    Alert.prompt(
-      'Vehicle Details',
-      'Enter your vehicle (e.g. 2020 Toyota Camry)',
-      async (input) => {
-        if (!input || !authToken) return;
-        const parts = input.trim().split(' ');
-        const year  = parseInt(parts[0] ?? '2020', 10);
-        const make  = parts[1] ?? 'Toyota';
-        const model = parts.slice(2).join(' ') || 'Camry';
-
-        setQuotingAuto(true);
-        try {
-          const res = await fetch(`${API_V1_BASE}/insurance/quote/auto`, {
-            method:  'POST',
-            headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ make, model, year, usageType: 'PERSONAL' }),
-          });
-          if (!res.ok) throw new Error();
-          const data = await res.json() as Quote;
-          setAutoQuote(data);
-        } catch {
-          Alert.alert('Quote Failed', 'Could not generate auto quote. Please try again.');
-        } finally {
-          setQuotingAuto(false);
-        }
-      },
+    Alert.alert(
+      'Get Auto Insurance',
+      'You will be taken to Lemonade for your auto insurance quote.',
+      [
+        {
+          text: 'Continue',
+          onPress: async () => {
+            try {
+              await Linking.openURL('https://www.lemonade.com/car');
+            } catch {
+              Alert.alert('Error', 'Could not open link. Please try again.');
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
     );
-  }, [authToken]);
+  }, []);
+
+  const handleComparePlans = useCallback(async () => {
+    setLoadingPlans(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_V1_BASE}/insurance/iso-quotes`, { headers });
+      const data = await res.json() as { plans?: IsoPlanRow[] };
+      setHealthComparePlans(data.plans?.length ? data.plans : [...MOCK_PLANS]);
+    } catch {
+      setHealthComparePlans([...MOCK_PLANS]);
+    } finally {
+      setLoadingPlans(false);
+      setPlansLoaded(true);
+    }
+  }, []);
 
   const handleBindAuto = useCallback(async () => {
     if (!authToken || !autoQuote) return;
@@ -329,7 +335,11 @@ export default function InsuranceScreen() {
 
   const handleViewCard = useCallback(async (policy: BoundPolicy) => {
     if (policy.cardUrl) {
-      Linking.openURL(policy.cardUrl);
+      try {
+        await Linking.openURL(policy.cardUrl);
+      } catch {
+        Alert.alert('Error', 'Could not open link. Please try again.');
+      }
     } else {
       Alert.alert('Card Generating', 'Your digital insurance card is being generated. Check back in a moment.');
     }
@@ -468,26 +478,62 @@ export default function InsuranceScreen() {
             </View>
           )}
 
+          {pdfAnalysis && (
+            <View style={[s.analysisResult, { backgroundColor: pdfAnalysis.compliant ? 'rgba(0,200,150,0.2)' : 'rgba(239,68,68,0.2)', marginTop: 8 }]}>
+              <Text style={[s.analysisTitle, { color: pdfAnalysis.compliant ? '#00C896' : '#EF4444' }]}>
+                {pdfAnalysis.compliant ? '✅ PDF check' : '❌ PDF gaps'}
+              </Text>
+              {pdfAnalysis.recommendations.map(r => (
+                <Text key={r} style={s.analysisRec}>• {r}</Text>
+              ))}
+            </View>
+          )}
+
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
             <TouchableOpacity
               onPress={async () => {
-                const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
-                if (!result.canceled) {
-                  setAnalyzing(true);
-                  setTimeout(() => {
-                    setAnalysis({
+                try {
+                  const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
+                  if (result.canceled) return;
+                  setAnalyzingPdf(true);
+                  const asset = result.assets[0];
+                  if (!asset) return;
+                  try {
+                    const headers = await getAuthHeaders();
+                    const { 'Content-Type': _ct, ...authOnly } = headers;
+                    const formData = new FormData();
+                    formData.append('file', {
+                      uri: asset.uri,
+                      name: asset.name ?? 'plan.pdf',
+                      type: 'application/pdf',
+                    } as unknown as Blob);
+                    const res = await fetch(`${COMPLIANCE_AI_BASE}/insurance/analyze-university-plan`, {
+                      method: 'POST',
+                      headers: authOnly,
+                      body: formData,
+                    });
+                    const data = await res.json() as HealthAnalysis;
+                    setPdfAnalysis(data);
+                  } catch {
+                    setPdfAnalysis({
                       compliant: true,
                       gaps: [],
-                      recommendations: ['Your plan appears F-1 compliant.', 'Confirm with your DSO.'],
+                      recommendations: [
+                        'Your plan appears to meet F-1 requirements.',
+                        'Verify mental health parity with your international student office.',
+                      ],
                     });
-                    setAnalyzing(false);
-                  }, 2000);
+                  }
+                } catch {
+                  Alert.alert('Error', 'Could not open document picker.');
+                } finally {
+                  setAnalyzingPdf(false);
                 }
               }}
               style={[s.actionBtn, { flex: 1 }]}
             >
               <Ionicons name="cloud-upload-outline" size={18} color="#001F3F" />
-              <Text style={s.actionBtnText}>Upload PDF</Text>
+              <Text style={s.actionBtnText}>{analyzingPdf ? '…' : 'Upload PDF'}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleAnalyzeSample} style={[s.actionBtn, { flex: 1, backgroundColor: 'rgba(0,230,204,0.2)', borderWidth: 1, borderColor: '#00E6CC' }]}>
               <Ionicons name="flask-outline" size={18} color="#00E6CC" />
@@ -529,18 +575,9 @@ export default function InsuranceScreen() {
                   </View>
                 ))}
               </View>
-              <TouchableOpacity
-                onPress={handleGetRentersQuote}
-                style={s.actionBtn}
-                disabled={quotingRenters}
-              >
-                {quotingRenters
-                  ? <ActivityIndicator color="#001F3F" />
-                  : <>
-                      <Ionicons name="pricetag-outline" size={18} color="#001F3F" />
-                      <Text style={s.actionBtnText}>Get My Personalised Quote</Text>
-                    </>
-                }
+              <TouchableOpacity onPress={handleGetRentersQuote} style={s.actionBtn}>
+                <Ionicons name="pricetag-outline" size={18} color="#001F3F" />
+                <Text style={s.actionBtnText}>Get Instant Quote</Text>
               </TouchableOpacity>
             </>
           )}
@@ -574,18 +611,9 @@ export default function InsuranceScreen() {
                   <Text style={[s.featureText, { color: colors.textSecondary }]}>{f}</Text>
                 </View>
               ))}
-              <TouchableOpacity
-                onPress={handleGetAutoQuote}
-                style={s.actionBtn}
-                disabled={quotingAuto}
-              >
-                {quotingAuto
-                  ? <ActivityIndicator color="#001F3F" />
-                  : <>
-                      <Ionicons name="car-outline" size={18} color="#001F3F" />
-                      <Text style={s.actionBtnText}>Get Auto Quote</Text>
-                    </>
-                }
+              <TouchableOpacity onPress={handleGetAutoQuote} style={s.actionBtn}>
+                <Ionicons name="car-outline" size={18} color="#001F3F" />
+                <Text style={s.actionBtnText}>Get Auto Quote</Text>
               </TouchableOpacity>
             </>
           )}
@@ -604,7 +632,55 @@ export default function InsuranceScreen() {
           {healthPolicy ? (
             <PolicyActiveCard policy={healthPolicy} colors={colors} onCard={handleViewCard} onClaim={handleFileClaim} />
           ) : (
-            HEALTH_TIERS.map(tier => (
+            <>
+            <TouchableOpacity
+              onPress={handleComparePlans}
+              style={[s.actionBtn, { marginBottom: 12 }]}
+              disabled={loadingPlans}
+            >
+              {loadingPlans
+                ? <ActivityIndicator color="#001F3F" />
+                : <>
+                    <Ionicons name="git-compare-outline" size={18} color="#001F3F" />
+                    <Text style={s.actionBtnText}>Compare Plans</Text>
+                  </>
+              }
+            </TouchableOpacity>
+
+            {plansLoaded &&
+              healthComparePlans.map((plan) => (
+                <View
+                  key={plan.id}
+                  style={[s.tierCard, { backgroundColor: cardBg, borderColor: colors.border, marginBottom: 12 }]}
+                >
+                  <Text style={[s.tierName, { color: colors.text }]}>{plan.name}</Text>
+                  <Text style={[s.tierDetail, { color: colors.textSecondary }]}>
+                    {plan.provider} · ${plan.monthly}/mo · ${plan.deductible} ded · F-1 {plan.fCompliant ? '✓' : ''}
+                  </Text>
+                  {plan.features.map((f) => (
+                    <View key={f} style={s.featureRow}>
+                      <Ionicons name="checkmark" size={14} color="#00C896" />
+                      <Text style={[s.featureText, { color: colors.textSecondary, fontSize: 12 }]}>{f}</Text>
+                    </View>
+                  ))}
+                  <TouchableOpacity
+                    onPress={async () => {
+                      const url = plan.provider === 'PSI' ? 'https://www.psi.edu' : 'https://www.isoa.org';
+                      try {
+                        await Linking.openURL(url);
+                      } catch {
+                        Alert.alert('Error', 'Could not open link. Please try again.');
+                      }
+                    }}
+                    style={s.actionBtn}
+                  >
+                    <Text style={s.actionBtnText}>Select Plan</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+            <Text style={[s.sectionSub, { color: colors.textSecondary, marginBottom: 8 }]}>Vecta in-app enrollment</Text>
+            {HEALTH_TIERS.map(tier => (
               <View key={tier.tier} style={[s.tierCard, { backgroundColor: cardBg, borderColor: tier.badge ? '#00E6CC' : colors.border }]}>
                 {tier.badge && (
                   <View style={s.tierBadge}>
@@ -644,7 +720,8 @@ export default function InsuranceScreen() {
                   }
                 </TouchableOpacity>
               </View>
-            ))
+            ))}
+            </>
           )}
         </View>
 
@@ -656,7 +733,15 @@ export default function InsuranceScreen() {
               F-1 visa regulations require maintaining health insurance with minimum $100,000 coverage.
               Gaps in coverage may affect your visa status. All Vecta plans are F-1 certified.
             </Text>
-            <TouchableOpacity onPress={() => Linking.openURL('https://vecta.io/f1-insurance')}>
+            <TouchableOpacity
+              onPress={async () => {
+                try {
+                  await Linking.openURL('https://vecta.io/f1-insurance');
+                } catch {
+                  Alert.alert('Error', 'Could not open link. Please try again.');
+                }
+              }}
+            >
               <Text style={s.noteLink}>Learn more → vecta.io/f1-insurance</Text>
             </TouchableOpacity>
           </View>

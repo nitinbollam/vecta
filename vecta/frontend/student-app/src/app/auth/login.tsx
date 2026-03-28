@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import {
@@ -80,9 +81,11 @@ export default function LoginScreen() {
   const handleDevBypass = useCallback(() => {
     if (process.env.NODE_ENV === 'production') return;
 
-    setAuthToken('dev-token-local');
+    void AsyncStorage.setItem('auth_token', 'dev-token-bypass');
+    void AsyncStorage.setItem('student_id', 'dev-student-id');
+    setAuthToken('dev-token-bypass');
     setProfile({
-      id:               'dev-student-00000000-0000-0000-0000-000000000000',
+      id:               'dev-student-id',
       fullName:         'Dev Student',
       universityName:   'MIT',
       programOfStudy:   'Computer Science',

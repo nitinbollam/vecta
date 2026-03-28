@@ -8,8 +8,11 @@ const logger = createLogger('proxy');
 export function createServiceProxy(serviceName: keyof typeof SERVICE_REGISTRY) {
   return async (req: Request, res: Response, _next: NextFunction) => {
     const service = SERVICE_REGISTRY[serviceName];
-    const qs = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
-    const targetUrl = `${service.url}${req.path}${qs}`;
+    const raw = req.url ?? '';
+    const qs = raw.includes('?') ? '?' + raw.split('?')[1] : '';
+    const pathOnly = raw.split('?')[0] ?? '';
+    const base = service.url.replace(/\/+$/, '');
+    const targetUrl = `${base}${pathOnly}${qs}`;
 
     try {
       const bodyJson = req.body ? JSON.stringify(req.body) : '';

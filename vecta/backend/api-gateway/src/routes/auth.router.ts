@@ -16,7 +16,7 @@ import jwt from 'jsonwebtoken';
 import { createLogger } from '@vecta/logger';
 import { query, queryOne, withTransaction } from '@vecta/database';
 import { hmacSign, generateSecureToken } from '@vecta/crypto';
-import { sendLandlordVerifyEmail } from '../../../services/identity-service/src/email.service';
+import { sendStudentMagicLinkEmail } from '../../../services/identity-service/src/email.service';
 import { getRedisGateway } from '../lib/redis-shared';
 
 const logger = createLogger('auth-router');
@@ -82,12 +82,12 @@ router.post('/auth/magic-link', async (req: Request, res: Response) => {
 
       const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'vecta://'}auth/verify?token=${rawToken}&email=${encodeURIComponent(normalised)}`;
 
-      // Reuse email service (same SendGrid integration)
-      // In production: use a dedicated student sign-in email template
       logger.info({ studentId, expiresAt }, 'Magic link generated');
 
-      // TODO: replace with student-specific email template
-      await sendLandlordVerifyEmail({ toEmail: normalised, verifyUrl });
+      await sendStudentMagicLinkEmail({
+        toEmail:      normalised,
+        magicLinkUrl: verifyUrl,
+      });
     });
 
     // Always 200 (prevent email enumeration)

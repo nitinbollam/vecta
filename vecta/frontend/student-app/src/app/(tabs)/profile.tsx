@@ -413,8 +413,6 @@ function SectionHeader({ title }: { title: string }) {
 // Main screen
 // ---------------------------------------------------------------------------
 
-const LANGUAGES = ['English', 'Spanish', 'Hindi', 'Mandarin', 'Arabic', 'Portuguese'];
-
 const MODE_LABELS: Record<ThemeMode, string> = {
   light: 'Light', dark: 'Dark', system: 'System',
 };
@@ -440,11 +438,7 @@ export default function ProfileScreen() {
   const handleNotificationsToggle = useCallback(async (value: boolean) => {
     setNotificationsOn(value);
     await AsyncStorage.setItem('push_notifications_enabled', String(value));
-    Alert.alert(
-      value ? 'Notifications Enabled' : 'Notifications Disabled',
-      value ? 'You will receive alerts for important account updates.' : 'You will no longer receive push notifications.',
-      [{ text: 'OK' }],
-    );
+    if (value) Alert.alert('Enabled', 'You will receive Vecta notifications.');
   }, []);
 
   const handleBiometricsToggle = useCallback(async (value: boolean) => {
@@ -457,9 +451,9 @@ export default function ProfileScreen() {
       'Appearance',
       'Choose theme',
       [
-        { text: 'Light',  onPress: () => setMode('light')  },
-        { text: 'Dark',   onPress: () => setMode('dark')   },
-        { text: 'System', onPress: () => setMode('system') },
+        { text: '☀️ Light',  onPress: () => setMode('light')  },
+        { text: '🌙 Dark',   onPress: () => setMode('dark')   },
+        { text: '📱 System', onPress: () => setMode('system') },
         { text: 'Cancel', style: 'cancel' as const },
       ],
     );
@@ -467,16 +461,15 @@ export default function ProfileScreen() {
 
   const handleLanguage = useCallback(() => {
     Alert.alert(
-      'Select Language',
-      '',
+      'Language',
+      'Select your language',
       [
-        ...LANGUAGES.map((lang) => ({
-          text: lang,
-          onPress: async () => {
-            setLanguage(lang);
-            await AsyncStorage.setItem('preferred_language', lang);
-          },
-        })),
+        { text: 'English',   onPress: () => { void AsyncStorage.setItem('language', 'en'); setLanguage('English'); } },
+        { text: 'हिंदी',      onPress: () => { void AsyncStorage.setItem('language', 'hi'); setLanguage('Hindi'); } },
+        { text: '中文',       onPress: () => { void AsyncStorage.setItem('language', 'zh'); setLanguage('Mandarin'); } },
+        { text: '한국어',      onPress: () => { void AsyncStorage.setItem('language', 'ko'); setLanguage('Korean'); } },
+        { text: 'Português', onPress: () => { void AsyncStorage.setItem('language', 'pt'); setLanguage('Portuguese'); } },
+        { text: 'العربية',    onPress: () => { void AsyncStorage.setItem('language', 'ar'); setLanguage('Arabic'); } },
         { text: 'Cancel', style: 'cancel' as const },
       ],
     );
@@ -485,7 +478,7 @@ export default function ProfileScreen() {
   const handleLogout = useCallback(() => {
     Alert.alert(
       'Sign Out',
-      'Your Vecta ID token will be revoked. You will need to re-authenticate.',
+      'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -493,9 +486,10 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             await AsyncStorage.multiRemove([
+              'auth_token',
+              'student_id',
               'push_notifications_enabled',
               'biometric_auth_enabled',
-              'preferred_language',
             ]);
             clearSession();
             router.replace('/auth/login');
@@ -553,10 +547,10 @@ export default function ProfileScreen() {
 
       {/* Legal */}
       <SectionHeader title="Legal & Support" />
-      <SettingsRow icon="shield-checkmark" label="Privacy Policy"     onPress={() => Linking.openURL('https://vecta.io/privacy')} />
-      <SettingsRow icon="document"         label="Terms of Service"   onPress={() => Linking.openURL('https://vecta.io/terms')} />
-      <SettingsRow icon="mail"             label="Contact Support"    onPress={() => Linking.openURL('mailto:support@vecta.io')} />
-      <SettingsRow icon="help-circle"      label="F-1 Compliance FAQ" onPress={() => Linking.openURL('https://vecta.io/f1-faq')} />
+      <SettingsRow icon="shield-checkmark" label="Privacy Policy"     onPress={async () => { try { await Linking.openURL('https://vecta.io/privacy'); } catch {} }} />
+      <SettingsRow icon="document"         label="Terms of Service"   onPress={async () => { try { await Linking.openURL('https://vecta.io/terms'); } catch {} }} />
+      <SettingsRow icon="mail"             label="Contact Support"    onPress={async () => { try { await Linking.openURL('mailto:support@vecta.io'); } catch {} }} />
+      <SettingsRow icon="help-circle"      label="F-1 Compliance FAQ" onPress={async () => { try { await Linking.openURL('https://vecta.io/f1-faq'); } catch {} }} />
       <SettingsRow icon="document-text"    label="App Version"        value="1.0.0" />
 
       {/* Sign out */}

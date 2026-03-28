@@ -30,7 +30,7 @@ export default function EsimScreen() {
     if (!authToken) return;
     setState('activating');
     try {
-      const res = await fetch(`${API_V1_BASE}/identity/esim/provision`, {
+      const res = await fetch(`${API_V1_BASE}/housing/esim/provision`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: selectedPlan }),

@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useStudentStore } from '@/store/student.store';
 import { useBalanceStore } from '@/store/balance.store';
 import { useHousingStore, useMobilityStore } from '@/stores';
-import { API_V1_BASE } from '@/config/api';
+import { API_V1_BASE, getAuthHeaders } from '@/config/api';
 import { VectaIDStatusBadge } from '@/components/VectaIDStatusBadge';
 import { ModuleCard } from '@/components/ModuleCard';
 import { VectaColors, VectaFonts } from '@/constants/design';
@@ -55,6 +55,7 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const isLoading = profileLoading || balanceLoading;
   const [refreshing, setRefreshing] = React.useState(false);
+  const [shareLoading, setShareLoading] = React.useState(false);
 
   const loadAll = React.useCallback(async () => {
     await Promise.all([fetchProfile(), fetchBalance(), fetchTrustScore(), fetchVehicles(), fetchEarnings()]);
@@ -70,35 +71,33 @@ export default function DashboardScreen() {
 
   const handleShareVectaID = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Share Vecta ID',
-      'Choose what to share with your landlord',
-      [
-        {
-          text: 'Share Verification Link',
-          onPress: async () => {
-            try {
-              if (!authToken) { Alert.alert('Error', 'Please sign in first.'); return; }
-              const res  = await fetch(`${API_V1_BASE}/identity/token/mint`, {
-                method:  'POST',
-                headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-              });
-              const data = await res.json() as { url?: string; token?: string };
-              const url  = data.url ?? (data.token ? `https://verify.vecta.io/verify/${data.token}` : null);
-              if (!url) throw new Error('No URL');
-              await Share.share({ message: url, url });
-            } catch {
-              Alert.alert('Error', 'Could not generate verification link. Please try again.');
-            }
-          },
-        },
-        {
-          text: 'Share Vecta ID Card',
-          onPress: () => router.push('/profile/vecta-id'),
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    try {
+      setShareLoading(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_V1_BASE}/identity/token/mint`, {
+        method: 'POST',
+        headers,
+      });
+      if (!res.ok) throw new Error('Failed to generate link');
+      const data = await res.json() as { verificationUrl?: string; url?: string; token?: string };
+      const url =
+        data.verificationUrl ??
+        data.url ??
+        (data.token ? `https://verify.vecta.io/verify/${data.token}` : null);
+      if (!url) throw new Error('No URL');
+      await Share.share({
+        message: `Verify my identity with Vecta: ${url}`,
+        url,
+        title: 'My Vecta Verification',
+      });
+    } catch {
+      Alert.alert(
+        'Error',
+        'Could not generate verification link. Please make sure you are logged in.',
+      );
+    } finally {
+      setShareLoading(false);
+    }
   };
 
   const handleEnrollVehicle = async () => {
@@ -176,12 +175,15 @@ export default function DashboardScreen() {
           </View>
 
           <Pressable
-            style={({ pressed }) => [styles.shareIdButton, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.shareIdButton, pressed && styles.pressed, shareLoading && { opacity: 0.7 }]}
             onPress={handleShareVectaID}
+            disabled={shareLoading}
             accessibilityRole="button"
             accessibilityLabel="Share your Vecta ID with a landlord"
           >
-            <Text style={styles.shareIdButtonText}>🔐 Share Vecta ID with Landlord</Text>
+            <Text style={styles.shareIdButtonText}>
+              {shareLoading ? '…' : '🔐 Share Vecta ID with Landlord'}
+            </Text>
           </Pressable>
         </LinearGradient>
 

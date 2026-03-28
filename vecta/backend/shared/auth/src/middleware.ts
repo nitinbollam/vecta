@@ -115,16 +115,95 @@ declare global {
 // Core auth middleware
 // ---------------------------------------------------------------------------
 
+function attachCorrelationId(req: Request, res: Response): void {
+  req.correlationId =
+    (req.headers['x-correlation-id'] as string) ?? crypto.randomUUID();
+  res.setHeader('x-correlation-id', req.correlationId);
+}
+
+/**
+ * Like authMiddleware, but allows requests without a Bearer token to proceed
+ * (routes that need a user should still use requireKYC / per-route guards).
+ */
+export async function authMiddlewareOptional(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  attachCorrelationId(req, res);
+
+  if (isUnauthenticatedPublicApiV1Route(req)) {
+    next();
+    return;
+  }
+
+  const jwtPublicKey = getJwtPublicKey();
+  if (!jwtPublicKey) {
+    logger.error({ correlationId: req.correlationId }, 'VECTA_JWT_PUBLIC_KEY is not set');
+    res.status(503).json({
+      error: 'AUTH_MISCONFIGURED',
+      message: 'JWT verification is not configured on this server.',
+    });
+    return;
+  }
+
+  const token = extractBearerToken(req);
+  if (!token) {
+    next();
+    return;
+  }
+
+  let decoded: VectaIDTokenPayload;
+  try {
+    decoded = jwt.verify(token, jwtPublicKey, {
+      algorithms: ['RS256'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    }) as VectaIDTokenPayload;
+  } catch (err) {
+    const isExpired = err instanceof jwt.TokenExpiredError;
+    logger.warn(
+      { err, correlationId: req.correlationId },
+      isExpired ? 'Token expired' : 'Token verification failed',
+    );
+    res.status(401).json({
+      error: isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      message: isExpired
+        ? 'Your session has expired. Please re-authenticate.'
+        : 'Token signature invalid or malformed.',
+    });
+    return;
+  }
+
+  try {
+    const redis = await getRedis();
+    const revoked = await redis.sIsMember('vecta:revoked_tokens', decoded.jti);
+    if (revoked) {
+      res.status(401).json({
+        error: 'TOKEN_REVOKED',
+        message: 'This session has been revoked. Please sign in again.',
+      });
+      return;
+    }
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ err }, 'Redis unavailable — rejecting request (fail-closed)');
+      res.status(503).json({ error: 'SERVICE_UNAVAILABLE' });
+      return;
+    }
+    logger.warn({ err }, 'Redis unavailable — failing open (dev mode)');
+  }
+
+  req.vectaUser = decoded;
+  next();
+}
+
 export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  // Attach correlation ID from header or generate one
-  req.correlationId =
-    (req.headers['x-correlation-id'] as string) ??
-    crypto.randomUUID();
-  res.setHeader('x-correlation-id', req.correlationId);
+  attachCorrelationId(req, res);
 
   if (isUnauthenticatedPublicApiV1Route(req)) {
     next();

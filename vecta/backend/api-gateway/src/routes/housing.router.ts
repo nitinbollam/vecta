@@ -415,7 +415,7 @@ router.get('/roommate/matches', async (req: Request, res: Response) => {
 // eSIM provisioning
 // ---------------------------------------------------------------------------
 
-router.post('/housing/esim/provision', async (req: Request, res: Response) => {
+async function handleEsimProvisionOrActivate(req: Request, res: Response): Promise<void> {
   try {
     const studentId = req.vectaUser!.sub;
     const { plan, imei } = z.object({
@@ -439,7 +439,11 @@ router.post('/housing/esim/provision', async (req: Request, res: Response) => {
     logger.error({ err }, 'eSIM provision failed');
     res.status(500).json({ error: 'ESIM_PROVISION_FAILED' });
   }
-});
+}
+
+router.post('/esim/provision', handleEsimProvisionOrActivate);
+/** Alias for student app — same upstream provision flow */
+router.post('/esim/activate', handleEsimProvisionOrActivate);
 
 function internalAuthHeaders(_body: unknown): Record<string, string> {
   const ts  = String(Date.now());

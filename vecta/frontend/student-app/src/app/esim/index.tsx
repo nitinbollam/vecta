@@ -11,9 +11,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useStudentStore } from '../../stores';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius } from '../../constants/theme';
-import { API_V1_BASE } from '../../config/api';
+import { API_V1_BASE, getAuthHeaders } from '../../config/api';
 import { useTheme } from '../../context/ThemeContext';
 
 // ---------------------------------------------------------------------------
@@ -77,29 +76,38 @@ const faqStyle = StyleSheet.create({
 
 export default function EsimManagementScreen() {
   const { colors }  = useTheme();
-  const authToken   = useStudentStore((s) => s.authToken);
   const [activating, setActivating] = useState(false);
-  const [activated,  setActivated]  = useState(false);
-  const [qrCodeUrl,  setQrCodeUrl]  = useState<string | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<'inactive' | 'activated'>('inactive');
+  const activated = status === 'activated';
 
   const handleActivate = useCallback(async () => {
-    if (!authToken) return;
-    setActivating(true);
     try {
-      const res  = await fetch(`${API_V1_BASE}/identity/esim/activate`, {
-        method:  'POST',
-        headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ plan: '4g_10gb' }),
+      setActivating(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_V1_BASE}/housing/esim/activate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ plan: '5g_unlimited' }),
       });
-      const data = await res.json() as { qrCodeUrl?: string };
-      setQrCodeUrl(data.qrCodeUrl ?? null);
-      setActivated(true);
+      const data = await res.json() as { qrCodeUrl?: string; message?: string };
+      if (data.qrCodeUrl) {
+        setQrCodeUrl(data.qrCodeUrl);
+        setStatus('activated');
+      } else if (data.message) {
+        Alert.alert('eSIM Submitted', data.message);
+      } else {
+        Alert.alert(
+          'eSIM',
+          'Activation submitted. Your QR code will arrive via email within 15 minutes.',
+        );
+      }
     } catch {
-      Alert.alert('Activation Failed', 'Could not activate eSIM. Please try again or contact support@vecta.io.');
+      Alert.alert('Error', 'Could not activate eSIM. Please check your connection and try again.');
     } finally {
       setActivating(false);
     }
-  }, [authToken]);
+  }, []);
 
   const gradient: [string, string] = ['#0284C7', '#06B6D4'];
 

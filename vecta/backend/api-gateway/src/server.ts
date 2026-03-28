@@ -10,7 +10,9 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import { authMiddleware } from "./middleware/auth.middleware";
+import { authMiddleware, authMiddlewareOptional } from "./middleware/auth.middleware";
+import { isDirectMode } from "./proxy/direct-fallback";
+import { createServiceProxy } from "./proxy/proxy.middleware";
 import { requestLogger } from "./middleware/request-logger.middleware";
 import { errorHandler } from "./middleware/error-handler.middleware";
 import { logger } from "./lib/logger";
@@ -301,51 +303,24 @@ async function bootstrap() {
     logger.warn({ event: "ROUTE_LOAD_FAILED", route: "identity-webhooks", error: (err as Error).message });
   }
 
-  app.use("/api/v1", authMiddleware(redis));
+  const directMode = isDirectMode();
 
-  // Routes that may fail if their service dependencies are misconfigured.
-  type RouteSpec = {
-    mountPath: string;
-    module: string;
-    exportKey: string;
-    service: string;
-    extraMiddleware?: express.RequestHandler;
-  };
+  type RouteLoad = { mountPath: string; module: string; exportKey: string; service: string };
 
-  const routeSpecs: RouteSpec[] = [
-    { mountPath: "/api/v1/identity",  module: "./routes/identity.router",    exportKey: "identityRouter",    service: "didit",    extraMiddleware: tokenRateLimiter },
-    { mountPath: "/api/v1/housing",   module: "./routes/housing.router",     exportKey: "housingRouter",     service: "plaid"    },
-    { mountPath: "/api/v1/mobility",  module: "./routes/mobility.router",    exportKey: "mobilityRouter",    service: "unit"     },
-    { mountPath: "/api/v1/banking",   module: "./routes/banking.router",     exportKey: "bankingRouter",     service: "unit"     },
-    { mountPath: "/api/v1",           module: "./routes/token.router",       exportKey: "tokenRouter",       service: "didit"    },
-    { mountPath: "/api/v1",           module: "./routes/auth.router",        exportKey: "authRouter",        service: "sendgrid" },
-    { mountPath: "/api/v1",           module: "./routes/insurance.router",   exportKey: "insuranceRouter",   service: "lemonade" },
-    { mountPath: "/api/v1",           module: "./routes/certificate.router", exportKey: "certificateRouter", service: "didit"    },
-    { mountPath: "/api/v1",           module: "./routes/compliance.router",  exportKey: "complianceRouter",  service: "checkr"   },
-    { mountPath: "/api/v1",           module: "./routes/protocol.router",    exportKey: "protocolRouter",    service: "plaid"    },
-    { mountPath: "/api/v1",           module: "./routes/landlord.router",    exportKey: "landlordRouter",    service: "checkr"   },
-    { mountPath: "/webhooks",         module: "./routes/landlord.router",    exportKey: "landlordRouter",    service: "checkr"   },
-  ];
-
-  for (const spec of routeSpecs) {
+  async function mountOr503(spec: RouteLoad, ...handlers: express.RequestHandler[]): Promise<void> {
     try {
       const mod = await import(spec.module);
-      const router = mod[spec.exportKey] as express.Router;
-      if (!router) throw new Error(`export '${spec.exportKey}' not found in ${spec.module}`);
-      if (spec.extraMiddleware) {
-        app.use(spec.mountPath, spec.extraMiddleware, router);
-      } else {
-        app.use(spec.mountPath, router);
-      }
+      const r = mod[spec.exportKey] as express.Router;
+      if (!r) throw new Error(`export '${spec.exportKey}' not found in ${spec.module}`);
+      app.use(spec.mountPath, ...handlers, r);
       logger.info({ event: "ROUTE_REGISTERED", mount: spec.mountPath, module: spec.module });
     } catch (err) {
       const error = (err as Error).message;
-      logger.warn(
-        { event: "ROUTE_LOAD_FAILED", mount: spec.mountPath, module: spec.module, service: spec.service, error },
-        `Route ${spec.mountPath} (${spec.service}) failed to load — those endpoints will return 503`,
-      );
-      // Attach a fallback 503 so the route doesn't silently 404
       const svc = spec.service;
+      logger.warn(
+        { event: "ROUTE_LOAD_FAILED", mount: spec.mountPath, module: spec.module, service: svc, error },
+        `Route ${spec.mountPath} (${svc}) failed to load — those endpoints will return 503`,
+      );
       app.use(spec.mountPath, (_req: express.Request, res: express.Response) => {
         res.status(503).json({
           error: "FEATURE_UNAVAILABLE",
@@ -355,6 +330,74 @@ async function bootstrap() {
       });
     }
   }
+
+  if (directMode) {
+    await mountOr503(
+      { mountPath: "/api/v1/identity", module: "./routes/identity.router", exportKey: "identityRouter", service: "didit" },
+      authMiddlewareOptional(redis),
+      tokenRateLimiter,
+    );
+    await mountOr503(
+      { mountPath: "/api/v1/banking", module: "./routes/banking.router", exportKey: "bankingRouter", service: "unit" },
+      authMiddleware(redis),
+    );
+    await mountOr503(
+      { mountPath: "/api/v1/housing", module: "./routes/housing.router", exportKey: "housingRouter", service: "plaid" },
+      authMiddleware(redis),
+    );
+    await mountOr503(
+      { mountPath: "/api/v1/mobility", module: "./routes/mobility.router", exportKey: "mobilityRouter", service: "unit" },
+      authMiddleware(redis),
+    );
+  } else {
+    app.use("/api/v1/identity", authMiddlewareOptional(redis), tokenRateLimiter, createServiceProxy("identity"));
+    app.use("/api/v1/banking", authMiddleware(redis), createServiceProxy("banking"));
+    app.use("/api/v1/housing", authMiddleware(redis), createServiceProxy("housing"));
+    app.use("/api/v1/mobility", authMiddleware(redis), createServiceProxy("mobility"));
+  }
+
+  const v1Merged = express.Router();
+  v1Merged.use(authMiddleware(redis));
+
+  const v1Specs: RouteLoad[] = [
+    { mountPath: "/", module: "./routes/token.router", exportKey: "tokenRouter", service: "didit" },
+    { mountPath: "/", module: "./routes/auth.router", exportKey: "authRouter", service: "sendgrid" },
+    { mountPath: "/", module: "./routes/insurance.router", exportKey: "insuranceRouter", service: "lemonade" },
+    { mountPath: "/", module: "./routes/certificate.router", exportKey: "certificateRouter", service: "didit" },
+    { mountPath: "/", module: "./routes/compliance.router", exportKey: "complianceRouter", service: "checkr" },
+    { mountPath: "/", module: "./routes/protocol.router", exportKey: "protocolRouter", service: "plaid" },
+    { mountPath: "/", module: "./routes/landlord.router", exportKey: "landlordRouter", service: "checkr" },
+  ];
+
+  for (const spec of v1Specs) {
+    try {
+      const mod = await import(spec.module);
+      const r = mod[spec.exportKey] as express.Router;
+      if (!r) throw new Error(`export '${spec.exportKey}' not found in ${spec.module}`);
+      v1Merged.use(spec.mountPath, r);
+      logger.info({ event: "ROUTE_REGISTERED", mount: "/api/v1", module: spec.module, sub: spec.exportKey });
+    } catch (err) {
+      const error = (err as Error).message;
+      const svc = spec.service;
+      logger.warn(
+        { event: "ROUTE_LOAD_FAILED", mount: "/api/v1", module: spec.module, service: svc, error },
+        `Route /api/v1 (${spec.exportKey}) failed to load — those endpoints will return 503`,
+      );
+      v1Merged.use(spec.mountPath, (_req: express.Request, res: express.Response) => {
+        res.status(503).json({
+          error: "FEATURE_UNAVAILABLE",
+          service: svc,
+          reason: services[svc]?.reason ?? error,
+        });
+      });
+    }
+  }
+
+  app.use("/api/v1", v1Merged);
+
+  await mountOr503(
+    { mountPath: "/webhooks", module: "./routes/landlord.router", exportKey: "landlordRouter", service: "checkr" },
+  );
 
   // ── Catch-all 404 (must come after all routes) ───────────────────────────
   app.use((req, res) => {
@@ -370,7 +413,10 @@ async function bootstrap() {
   // ── Listen ───────────────────────────────────────────────────────────────
   const PORT = Number(process.env.PORT) || 4000;
   app.listen(PORT, "0.0.0.0", () => {
-    logger.info({ event: "SERVER_STARTED", port: PORT, services });
+    logger.info(
+      { event: "SERVER_STARTED", port: PORT, services, mode: directMode ? "DIRECT" : "MICROSERVICE" },
+      "API Gateway started",
+    );
     console.log(`Server running on port ${PORT}`);
   });
 

@@ -243,7 +243,14 @@ export default function RoommateScreen() {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const data = await res.json() as { matches: RoommateMatch[] };
-      setMatches(data.matches ?? []);
+      const list = data.matches ?? [];
+      if (!res.ok || list.length === 0) {
+        setMatches(MOCK_MATCHES);
+        setUsingMock(true);
+      } else {
+        setMatches(list);
+        setUsingMock(false);
+      }
       setStep('matches');
     } catch {
       setMatches(MOCK_MATCHES);
@@ -374,6 +381,20 @@ export default function RoommateScreen() {
             </View>
           ) : (
             matches.map((match, i) => <MatchCard key={match.student_id} match={match} rank={i + 1} />)
+          )}
+          {matches.length > 0 && (
+            <Text
+              style={{
+                fontFamily: VectaFonts.regular,
+                fontSize: VectaFonts.xs,
+                color: VectaColors.textMuted,
+                textAlign: 'center',
+                marginTop: VectaSpacing['3'],
+                paddingHorizontal: VectaSpacing['2'],
+              }}
+            >
+              Live AI matching activates when the compliance service is online
+            </Text>
           )}
         </ScrollView>
       )}
