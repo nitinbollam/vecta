@@ -12,7 +12,7 @@
  * Run: npx jest __tests__/f1-compliance.test.ts
  */
 
-import { checkPermission, UserRole, PERMISSION_MAP } from '../packages/auth/src/rbac';
+import { checkPermission, UserRole, PERMISSION_MAP } from '../backend/shared/auth/src/rbac';
 
 // ---------------------------------------------------------------------------
 // 1. RBAC — mobility dead-end routes
@@ -129,7 +129,7 @@ describe('Vehicle enrollment: consent gate', () => {
 // 5. Crypto: field encryption round-trip
 // ---------------------------------------------------------------------------
 
-import { encryptField, decryptField, hmacSign, hmacVerify, sha256Hex } from '../packages/crypto/src/index';
+import { encryptField, decryptField, hmacSign, hmacVerify, sha256Hex } from '../backend/shared/crypto/src/index';
 
 // Temporarily set env for tests
 process.env.VECTA_FIELD_ENCRYPTION_KEY = 'test-encryption-key-must-be-at-least-32-chars!!';

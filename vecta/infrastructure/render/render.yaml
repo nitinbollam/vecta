@@ -1,0 +1,157 @@
+version: "1"
+
+services:
+  - type: web
+    name: vecta-api-gateway
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/api-gateway...
+    startCommand: cd backend/api-gateway && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: IDENTITY_SERVICE_URL
+        fromService:
+          name: vecta-identity-service
+          type: pserv
+          property: host
+      - key: BANKING_SERVICE_URL
+        fromService:
+          name: vecta-banking-service
+          type: pserv
+          property: host
+      - key: HOUSING_SERVICE_URL
+        fromService:
+          name: vecta-housing-service
+          type: pserv
+          property: host
+      - key: MOBILITY_SERVICE_URL
+        fromService:
+          name: vecta-mobility-service
+          type: pserv
+          property: host
+      - key: COMPLIANCE_SERVICE_URL
+        fromService:
+          name: vecta-compliance-service
+          type: pserv
+          property: host
+      - key: AUDIT_SERVICE_URL
+        fromService:
+          name: vecta-audit-service
+          type: pserv
+          property: host
+      - key: COMPLIANCE_AI_URL
+        fromService:
+          name: vecta-compliance-ai
+          type: pserv
+          property: host
+
+  - type: pserv
+    name: vecta-identity-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/identity-service...
+    startCommand: cd backend/services/identity-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3001"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-banking-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/banking-service...
+    startCommand: cd backend/services/banking-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3002"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-housing-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/housing-service...
+    startCommand: cd backend/services/housing-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3003"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-mobility-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/mobility-service...
+    startCommand: cd backend/services/mobility-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3004"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-compliance-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/compliance-service...
+    startCommand: cd backend/services/compliance-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3005"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-audit-service
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: npm ci && npx turbo run build --filter=@vecta/audit-service...
+    startCommand: cd backend/services/audit-service && node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3006"
+      - key: NODE_ENV
+        value: production
+
+  - type: pserv
+    name: vecta-compliance-ai
+    env: python
+    region: oregon
+    plan: starter
+    rootDir: vecta
+    buildCommand: pip install -r backend/services/compliance-ai/requirements.txt
+    startCommand: cd backend/services/compliance-ai && uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3007"
+      - key: NODE_ENV
+        value: production

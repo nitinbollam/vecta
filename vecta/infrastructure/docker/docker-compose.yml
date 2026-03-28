@@ -1,0 +1,141 @@
+version: '3.9'
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://vecta:vecta_local@postgres:5432/vecta_db
+  REDIS_URL: redis://redis:6379
+  NODE_ENV: development
+  INTERNAL_SERVICE_SECRET: dev_internal_secret_min_32_chars_long_xx
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: vecta_db
+      POSTGRES_USER: vecta
+      POSTGRES_PASSWORD: vecta_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vecta -d vecta_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  identity-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/identity-service/Dockerfile
+    ports: ["3001:3001"]
+    environment:
+      <<: *backend-env
+      PORT: 3001
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+
+  banking-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/banking-service/Dockerfile
+    ports: ["3002:3002"]
+    environment:
+      <<: *backend-env
+      PORT: 3002
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  housing-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/housing-service/Dockerfile
+    ports: ["3003:3003"]
+    environment:
+      <<: *backend-env
+      PORT: 3003
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  mobility-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/mobility-service/Dockerfile
+    ports: ["3004:3004"]
+    environment:
+      <<: *backend-env
+      PORT: 3004
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  compliance-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/compliance-service/Dockerfile
+    ports: ["3005:3005"]
+    environment:
+      <<: *backend-env
+      PORT: 3005
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+
+  audit-service:
+    build:
+      context: ../..
+      dockerfile: backend/services/audit-service/Dockerfile
+    ports: ["3006:3006"]
+    environment:
+      <<: *backend-env
+      PORT: 3006
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  compliance-ai:
+    build:
+      context: ../..
+      dockerfile: backend/services/compliance-ai/Dockerfile
+    ports: ["3007:3007"]
+    environment:
+      DATABASE_URL: postgresql://vecta:vecta_local@postgres:5432/vecta_db
+      REDIS_URL: redis://redis:6379
+      PORT: 3007
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: backend/api-gateway/Dockerfile
+    ports: ["4000:4000"]
+    environment:
+      <<: *backend-env
+      PORT: 4000
+      IDENTITY_SERVICE_URL:   http://identity-service:3001
+      BANKING_SERVICE_URL:    http://banking-service:3002
+      HOUSING_SERVICE_URL:    http://housing-service:3003
+      MOBILITY_SERVICE_URL:   http://mobility-service:3004
+      COMPLIANCE_SERVICE_URL: http://compliance-service:3005
+      AUDIT_SERVICE_URL:      http://audit-service:3006
+      COMPLIANCE_AI_URL:      http://compliance-ai:3007
+    depends_on:
+      - identity-service
+      - banking-service
+      - housing-service
+      - mobility-service
+      - compliance-service
+      - audit-service
+      - compliance-ai
+
+volumes:
+  postgres_data:

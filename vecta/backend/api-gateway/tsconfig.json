@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "../..",
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vecta/logger": ["../shared/logger/src/index.ts"],
+      "@vecta/database": ["../shared/database/src/index.ts"],
+      "@vecta/crypto": ["../shared/crypto/src/index.ts"],
+      "@vecta/storage": ["../shared/storage/src/index.ts"],
+      "@vecta/auth": ["../shared/auth/src/index.ts"],
+      "@vecta/types": ["../shared/types/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "scripts/**/*", "../shared/**/*", "../services/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "../services/**/server.ts",
+    "../shared/**/node_modules",
+    "../shared/**/dist"
+  ]
+}

@@ -63,7 +63,7 @@ jest.mock('axios', () => ({
 // Trust engine (pure function — no mocking needed)
 // ---------------------------------------------------------------------------
 
-import { computeTrustScore } from '../services/housing-service/src/trust-engine';
+import { computeTrustScore } from '../backend/services/housing-service/src/trust-engine';
 
 describe('Trust Engine: property-based tests', () => {
   const base = {
@@ -132,7 +132,7 @@ describe('Trust Engine: property-based tests', () => {
 // Lemonade F-1 auto insurance constraint
 // ---------------------------------------------------------------------------
 
-import { LemonadeService } from '../services/identity-service/src/lemonade.service';
+import { LemonadeService } from '../backend/services/identity-service/src/lemonade.service';
 
 describe('Lemonade: F-1 auto insurance constraints', () => {
   const svc = new LemonadeService();
@@ -209,7 +209,7 @@ describe('Lemonade: F-1 auto insurance constraints', () => {
 // Single-use token: race condition safety
 // ---------------------------------------------------------------------------
 
-import { consumeToken } from '../packages/auth/src/single-use-token';
+import { consumeToken } from '../backend/shared/auth/src/single-use-token';
 
 describe('Single-use token: boundary conditions', () => {
   const { withTransaction, queryOne } = jest.requireMock('@vecta/database');

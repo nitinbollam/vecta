@@ -13,28 +13,28 @@ module.exports = {
   },
   testEnvironment: 'node',
   moduleNameMapper: {
-    '^@vecta/types$':    '<rootDir>/packages/types/src/index.ts',
-    '^@vecta/auth/(.*)$':'<rootDir>/packages/auth/src/$1',
-    '^@vecta/crypto$':   '<rootDir>/packages/crypto/src/index.ts',
-    '^@vecta/logger$':   '<rootDir>/packages/logger/src/index.ts',
-    '^@vecta/database$': '<rootDir>/packages/database/src/index.ts',
-    '^@vecta/storage$':  '<rootDir>/packages/storage/src/index.ts',
+    '^@vecta/types$':    '<rootDir>/backend/shared/types/src/index.ts',
+    '^@vecta/auth/(.*)$':'<rootDir>/backend/shared/auth/src/$1',
+    '^@vecta/crypto$':   '<rootDir>/backend/shared/crypto/src/index.ts',
+    '^@vecta/logger$':   '<rootDir>/backend/shared/logger/src/index.ts',
+    '^@vecta/database$': '<rootDir>/backend/shared/database/src/index.ts',
+    '^@vecta/storage$':  '<rootDir>/backend/shared/storage/src/index.ts',
   },
   collectCoverageFrom: [
-    'packages/*/src/**/*.ts',
-    'services/*/src/**/*.ts',
-    'apps/api-gateway/src/**/*.ts',
+    'backend/shared/*/src/**/*.ts',
+    'backend/services/*/src/**/*.ts',
+    'backend/api-gateway/src/**/*.ts',
     '!**/*.d.ts',
     '!**/node_modules/**',
     '!**/dist/**',
   ],
   coverageThreshold: {
-    './packages/auth/src/rbac.ts': {
+    './backend/shared/auth/src/rbac.ts': {
       branches: 100,
       functions: 100,
       lines: 100,
     },
-    './packages/crypto/src/index.ts': {
+    './backend/shared/crypto/src/index.ts': {
       branches: 90,
       functions: 100,
       lines: 95,

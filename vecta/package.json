@@ -4,22 +4,35 @@
   "private": true,
   "description": "Vecta — Life-as-a-Service for F-1 International Students",
   "workspaces": [
-    "apps/*",
-    "packages/*",
-    "services/*"
+    "frontend/student-app",
+    "frontend/landlord-portal",
+    "backend/api-gateway",
+    "backend/services/identity-service",
+    "backend/services/banking-service",
+    "backend/services/housing-service",
+    "backend/services/mobility-service",
+    "backend/services/compliance-service",
+    "backend/services/audit-service",
+    "backend/shared/auth",
+    "backend/shared/crypto",
+    "backend/shared/database",
+    "backend/shared/logger",
+    "backend/shared/providers",
+    "backend/shared/storage",
+    "backend/shared/types"
   ],
   "scripts": {
-    "build":      "turbo run build --filter=!api-gateway",
-    "build:all":  "turbo run build",
-    "dev":        "turbo run dev",
-    "test":       "turbo run test",
-    "lint":       "turbo run lint",
-    "type-check": "turbo run type-check",
-    "clean":      "turbo run clean && rm -rf node_modules",
-    "db:migrate": "psql $DATABASE_URL -f packages/database/migrations/001_initial_schema.sql && psql $DATABASE_URL -f packages/database/migrations/002_plaid_connections.sql && psql $DATABASE_URL -f packages/database/migrations/003_compliance_trust.sql && psql $DATABASE_URL -f packages/database/migrations/004_compliance_network.sql",
-    "docker:up":  "docker compose up -d",
-    "docker:down":"docker compose down",
-    "scripts:reencrypt-pii": "npm run reencrypt-pii --workspace=api-gateway"
+    "dev":              "turbo run dev",
+    "build":            "turbo run build",
+    "test":             "turbo run test",
+    "lint":             "turbo run lint",
+    "dev:frontend":     "turbo run dev --filter=./frontend/*",
+    "dev:backend":      "turbo run dev --filter=./backend/*",
+    "dev:gateway":      "turbo run dev --filter=@vecta/api-gateway",
+    "dev:services":     "turbo run dev --filter=./backend/services/*",
+    "build:shared":     "turbo run build --filter=./backend/shared/*",
+    "db:migrate":       "node scripts/run-migrations.js",
+    "scripts:reencrypt-pii": "npm run reencrypt-pii --workspace=@vecta/api-gateway"
   },
   "devDependencies": {
     "@types/jest":    "^29.5.12",
@@ -32,7 +45,8 @@
     "eslint":         "^8.57.0",
     "@typescript-eslint/eslint-plugin": "^7.10.0",
     "@typescript-eslint/parser":        "^7.10.0",
-    "prettier":       "^3.2.5"
+    "prettier":       "^3.2.5",
+    "pg":             "^8.13.0"
   },
   "engines": {
     "node": ">=20.0.0",

@@ -53,7 +53,7 @@ jest.mock('@vecta/storage', () => ({
 // Single-use token lifecycle
 // ---------------------------------------------------------------------------
 
-import { computeTrustScore, type TrustEngineInput } from '../services/housing-service/src/trust-engine';
+import { computeTrustScore, type TrustEngineInput } from '../backend/services/housing-service/src/trust-engine';
 
 describe('Trust Engine: composite score computation', () => {
   const baseInput: TrustEngineInput = {
@@ -144,7 +144,7 @@ describe('Trust Engine: composite score computation', () => {
 // Masked balance tier assignment
 // ---------------------------------------------------------------------------
 
-import { getMaskedBalance } from '../services/banking-service/src/plaid.service';
+import { getMaskedBalance } from '../backend/services/banking-service/src/plaid.service';
 
 describe('getMaskedBalance: tier assignment', () => {
   const { queryOne } = jest.requireMock('@vecta/database');
@@ -178,7 +178,7 @@ describe('getMaskedBalance: tier assignment', () => {
 // Landlord tier logic (no DB — pure unit test)
 // ---------------------------------------------------------------------------
 
-import { filterViewForTier, type LandlordAccessContext } from '../packages/auth/src/landlord-access';
+import { filterViewForTier, type LandlordAccessContext } from '../backend/shared/auth/src/landlord-access';
 
 describe('filterViewForTier: PII vault enforcement', () => {
   const fullView = {

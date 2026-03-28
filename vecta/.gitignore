@@ -73,7 +73,7 @@ web-build/
 # Compiled output
 *.js.map
 *.d.ts.map
-services/*/src/*.js
-services/*/src/*.d.ts
-packages/*/src/*.js
-packages/*/src/*.d.ts
+backend/services/*/src/*.js
+backend/services/*/src/*.d.ts
+backend/shared/*/src/*.js
+backend/shared/*/src/*.d.ts
