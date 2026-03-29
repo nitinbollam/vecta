@@ -15,7 +15,8 @@ import {
 } from "@vecta/types";
 import { encryptField } from "@vecta/crypto";
 import { uploadSelfieToS3, getSignedSelfieUrl } from "@vecta/storage";
-import { createLogger } from "@vecta/logger";
+import { createLogger, withRetry } from "@vecta/logger";
+import { onboardingFlowService } from "./onboarding-flow.service";
 import { getPool } from "@vecta/database";
 
 const logger = createLogger("identity-didit");
@@ -80,40 +81,62 @@ class DiditAPIClient {
     requiredDocumentTypes: string[];
   }): Promise<{ sessionId: string; sessionUrl: string }> {
     this.ensureApiConfigured();
-    const response = await fetch(`${this.baseUrl}/v1/sessions`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
+    return withRetry(
+      async () => {
+        const response = await fetch(`${this.baseUrl}/v1/sessions`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            redirect_url: options.redirectUrl,
+            webhook_url: options.webhookUrl,
+            document_types: options.requiredDocumentTypes,
+            features: ["NFC_CHIP", "LIVENESS", "FACIAL_MATCH"],
+            vendor_data: `vecta-${Date.now()}`,
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          throw new DiditError(`Failed to create Didit session: ${response.status} ${err}`);
+        }
+
+        const data = await response.json() as { session_id: string; session_url: string };
+        return { sessionId: data.session_id, sessionUrl: data.session_url };
       },
-      body: JSON.stringify({
-        redirect_url: options.redirectUrl,
-        webhook_url: options.webhookUrl,
-        document_types: options.requiredDocumentTypes,
-        features: ["NFC_CHIP", "LIVENESS", "FACIAL_MATCH"],
-        vendor_data: `vecta-${Date.now()}`,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new DiditError(`Failed to create Didit session: ${response.status} ${err}`);
-    }
-
-    const data = await response.json() as { session_id: string; session_url: string };
-    return { sessionId: data.session_id, sessionUrl: data.session_url };
+      {
+        attempts: 3,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        onRetry: (attempt: number, err: Error) =>
+          logger.warn({ attempt, err: err.message }, "Didit createSession retry"),
+      },
+    );
   }
 
   async getSessionResult(sessionId: string): Promise<DiditSessionResponse> {
     this.ensureApiConfigured();
-    const response = await fetch(`${this.baseUrl}/v1/sessions/${sessionId}`, {
-      headers: { "Authorization": `Bearer ${this.apiKey}` },
-    });
+    return withRetry(
+      async () => {
+        const response = await fetch(`${this.baseUrl}/v1/sessions/${sessionId}`, {
+          headers: { "Authorization": `Bearer ${this.apiKey}` },
+        });
 
-    if (!response.ok) {
-      throw new DiditError(`Didit session fetch failed: ${response.status}`);
-    }
-    return response.json() as Promise<DiditSessionResponse>;
+        if (!response.ok) {
+          throw new DiditError(`Didit session fetch failed: ${response.status}`);
+        }
+        return response.json() as Promise<DiditSessionResponse>;
+      },
+      {
+        attempts: 3,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        onRetry: (attempt: number, err: Error) =>
+          logger.warn({ attempt, err: err.message }, "Didit getSessionResult retry"),
+      },
+    );
   }
 
   verifyWebhookSignature(payload: string, signature: string): boolean {
@@ -193,6 +216,8 @@ export class IdentityService {
     );
 
     logger.info({ event: "DIDIT_SESSION_CREATED", studentId, sessionId });
+
+    await onboardingFlowService.advanceStep(studentId, "KYC_INITIATED");
 
     return { sessionId, verificationUrl: sessionUrl };
   }
@@ -312,6 +337,8 @@ export class IdentityService {
     await this.redis.del(`vecta:didit:session:${sessionId}`);
 
     logger.info({ event: "IDENTITY_VERIFIED", studentId, sessionId });
+
+    await onboardingFlowService.advanceStep(studentId, "KYC_VERIFIED");
 
     // Fire-and-forget: notify student KYC is approved
     void (async () => {

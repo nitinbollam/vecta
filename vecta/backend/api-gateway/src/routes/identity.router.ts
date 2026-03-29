@@ -24,8 +24,27 @@ import { baasService } from '../../../services/identity-service/src/unit.service
 import { authMiddleware, requireKYC, getKeyRegistry, base58Encode } from '@vecta/auth';
 import { createLogger } from '@vecta/logger';
 import { queryOne } from '@vecta/database';
+import { freshError } from '@vecta/types';
+import { onboardingFlowService } from '../../../services/identity-service/src/onboarding-flow.service';
+
 const logger = createLogger('identity-router');
 const router = Router();
+
+// ---------------------------------------------------------------------------
+// Onboarding state — resume after app restart
+// GET /api/v1/identity/onboarding/state
+// ---------------------------------------------------------------------------
+
+router.get('/onboarding/state', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const studentId = req.vectaUser!.sub;
+    const state = await onboardingFlowService.getState(studentId);
+    res.json({ step: state.step, status: state.status, error: state.error });
+  } catch (err) {
+    logger.error({ err }, 'onboarding state failed');
+    res.status(500).json(freshError('NETWORK_ERROR'));
+  }
+});
 
 // ---------------------------------------------------------------------------
 // VectaID: process NFC verification result from mobile app
@@ -58,6 +77,10 @@ router.post('/vecta-id/verify', authMiddleware, async (req: Request, res: Respon
     const service = new VectaIDService(getPool());
     const result  = await service.processVerification({ studentId, ...body } as VectaIDVerifyRequest);
 
+    if (result.kycStatus === 'APPROVED') {
+      await onboardingFlowService.advanceStep(studentId, 'KYC_VERIFIED');
+    }
+
     res.json({
       kycStatus:    result.kycStatus,
       vectaIdToken: result.vectaIdToken,
@@ -69,7 +92,7 @@ router.post('/vecta-id/verify', authMiddleware, async (req: Request, res: Respon
       return res.status(400).json({ error: 'INVALID_PAYLOAD', issues: err.issues });
     }
     logger.error({ err }, '[VectaID] Verification processing failed');
-    res.status(500).json({ error: 'VECTA_ID_VERIFY_FAILED' });
+    res.status(500).json(freshError('KYC_FAILED'));
   }
 });
 
@@ -91,7 +114,7 @@ router.post('/verify/initiate', authMiddleware, async (req: Request, res: Respon
     });
   } catch (err) {
     logger.error({ err }, 'Failed to initiate Didit session');
-    res.status(500).json({ error: 'VERIFICATION_INIT_FAILED' });
+    res.status(500).json(freshError('KYC_FAILED'));
   }
 });
 
@@ -115,7 +138,7 @@ router.get('/verify/:sessionId', authMiddleware, async (req: Request, res: Respo
     });
   } catch (err) {
     logger.error({ err }, 'Failed to get session status');
-    res.status(500).json({ error: 'INTERNAL_ERROR' });
+    res.status(500).json(freshError('NETWORK_ERROR'));
   }
 });
 
@@ -193,7 +216,7 @@ router.post(
       });
     } catch (err) {
       logger.error({ err }, 'Unit.co provisioning failed');
-      res.status(500).json({ error: 'BANKING_PROVISION_FAILED' });
+      res.status(500).json(freshError('BANK_CREATE_FAILED'));
     }
   },
 );
@@ -213,7 +236,7 @@ router.get(
       res.json(balance);
     } catch (err) {
       logger.error({ err }, 'Failed to fetch balance');
-      res.status(500).json({ error: 'BALANCE_FETCH_FAILED' });
+      res.status(500).json(freshError('NETWORK_ERROR'));
     }
   },
 );

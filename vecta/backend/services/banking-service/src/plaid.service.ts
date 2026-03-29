@@ -9,7 +9,7 @@ import type { Redis } from "ioredis";
 import { PlaidApi, Configuration, PlaidEnvironments, Products, CountryCode } from "plaid";
 import type { PlaidSolvencyReport } from "@vecta/types";
 import { uploadLocPdf } from "@vecta/storage";
-import { createLogger } from "@vecta/logger";
+import { createLogger, withRetry } from "@vecta/logger";
 import { generateLocPDF } from "./loc-pdf.generator";
 
 const logger = createLogger("banking-plaid");
@@ -288,7 +288,19 @@ export class SolvencyService {
     while (attempts < maxAttempts) {
       attempts++;
       try {
-        const res = await this.plaid.assetReportGet({ asset_report_token: assetReportToken });
+        const res = await withRetry(
+          () => this.plaid.assetReportGet({ asset_report_token: assetReportToken }),
+          {
+            attempts: 3,
+            baseDelayMs: 1000,
+            maxDelayMs: 10000,
+            onRetry: (attempt: number, err: Error) =>
+              logger.warn(
+                { attempt, err: err.message },
+                "Plaid assetReportGet retry",
+              ),
+          },
+        );
         return res.data as unknown as PlaidAssetReportPayload;
       } catch (err: any) {
         if (err?.response?.data?.error_code === "PRODUCT_NOT_READY") {

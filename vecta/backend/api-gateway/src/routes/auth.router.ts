@@ -17,6 +17,8 @@ import { createLogger } from '@vecta/logger';
 import { query, queryOne, withTransaction } from '@vecta/database';
 import { hmacSign, generateSecureToken } from '@vecta/crypto';
 import { sendStudentMagicLinkEmail } from '../../../services/identity-service/src/email.service';
+import { onboardingFlowService } from '../../../services/identity-service/src/onboarding-flow.service';
+import { freshError } from '@vecta/types';
 import { getRedisGateway } from '../lib/redis-shared';
 
 const logger = createLogger('auth-router');
@@ -181,10 +183,12 @@ router.post('/auth/verify', async (req: Request, res: Response) => {
       [jti, student.id, expiry],
     );
 
+    await onboardingFlowService.advanceStep(student.id, 'EMAIL_VERIFIED');
+
     res.json({ token: authToken, studentId: student.id });
   } catch (err) {
     logger.error({ err }, 'Magic link verification failed');
-    res.status(500).json({ error: 'VERIFY_FAILED' });
+    res.status(500).json(freshError('NETWORK_ERROR'));
   }
 });
 

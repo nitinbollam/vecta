@@ -2,14 +2,15 @@
  * onboarding/banking.tsx — Unit.co Banking Provisioning Screen
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useStudentStore } from '../../stores';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients } from '../../constants/theme';
 import { API_V1_BASE } from '../../config/api';
+import { parseVectaApiError, showVectaErrorAlert } from '../../lib/vecta-error-ui';
 
 const BANKING_FEATURES = [
   { icon: 'card',           text: 'Real US debit card — Visa network' },
@@ -23,10 +24,23 @@ const BANKING_FEATURES = [
 export default function BankingOnboardingScreen() {
   const { profile, authToken, fetchProfile } = useStudentStore();
   const [state, setState] = useState<'idle' | 'provisioning' | 'success' | 'error'>('idle');
+  const params = useLocalSearchParams<{ onboardingError?: string }>();
+  const resumeAlertShown = useRef(false);
 
   useEffect(() => {
     if (profile?.kycStatus === 'APPROVED') setState('success');
   }, [profile?.kycStatus]);
+
+  useEffect(() => {
+    const raw = params.onboardingError;
+    if (!raw || resumeAlertShown.current) return;
+    resumeAlertShown.current = true;
+    Alert.alert(
+      'Setup paused',
+      typeof raw === 'string' ? decodeURIComponent(raw) : String(raw),
+      [{ text: 'OK' }],
+    );
+  }, [params.onboardingError]);
 
   const handleProvision = useCallback(async () => {
     if (!authToken) return;
@@ -36,12 +50,31 @@ export default function BankingOnboardingScreen() {
         method: 'POST',
         headers: { Authorization: `Bearer ${authToken}` },
       });
-      if (!res.ok) throw new Error('Provisioning failed');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const ve = parseVectaApiError(data);
+        if (ve) {
+          showVectaErrorAlert(ve, { onRetry: () => void handleProvision() });
+        } else {
+          Alert.alert('Error', 'Provisioning failed. Please try again.');
+        }
+        setState('idle');
+        return;
+      }
       await fetchProfile();
       setState('success');
       setTimeout(() => router.replace('/onboarding/esim'), 1800);
     } catch {
-      setState('error');
+      showVectaErrorAlert(
+        {
+          code: 'NETWORK_ERROR',
+          message: 'Connection error. Please try again.',
+          retryable: true,
+          supportRef: 'LOCAL',
+        },
+        { onRetry: () => void handleProvision() },
+      );
+      setState('idle');
     }
   }, [authToken, fetchProfile]);
 

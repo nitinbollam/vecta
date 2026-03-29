@@ -22,6 +22,9 @@ import { identityService, mintVectaIDToken, verifyVectaIDToken } from './didit.s
 import { baasService } from './unit.service';
 import { checkDatabaseHealth, closePool } from '@vecta/database';
 import { createLogger } from '@vecta/logger';
+import { authMiddleware } from '@vecta/auth';
+import { freshError } from '@vecta/types';
+import { onboardingFlowService } from './onboarding-flow.service';
 import { hmacVerify } from '@vecta/crypto';
 import { getSignedSelfieUrl } from '@vecta/storage';
 import {
@@ -69,6 +72,28 @@ app.get('/health', async (_req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Onboarding state (Bearer JWT — used when gateway proxies student requests)
+// ---------------------------------------------------------------------------
+app.get('/onboarding/state', (req, res) => {
+  void authMiddleware(req, res, () => {
+    void (async () => {
+      try {
+        const studentId = req.vectaUser?.sub;
+        if (!studentId) {
+          if (!res.headersSent) res.status(401).json(freshError('AUTH_EXPIRED'));
+          return;
+        }
+        const state = await onboardingFlowService.getState(studentId);
+        res.json({ step: state.step, status: state.status, error: state.error });
+      } catch (err) {
+        logger.error({ err }, 'onboarding state failed');
+        if (!res.headersSent) res.status(500).json(freshError('NETWORK_ERROR'));
+      }
+    })();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Didit — initiate NFC session
 // ---------------------------------------------------------------------------
 app.post('/verify/initiate', internalAuth, async (req: Request, res: Response) => {
@@ -78,7 +103,7 @@ app.post('/verify/initiate', internalAuth, async (req: Request, res: Response) =
     res.status(201).json(session);
   } catch (err) {
     logger.error({ err }, 'Verification initiation failed');
-    res.status(500).json({ error: 'VERIFICATION_INIT_FAILED' });
+    res.status(500).json(freshError('KYC_FAILED'));
   }
 });
 
@@ -97,7 +122,7 @@ app.get('/verify/:sessionId', internalAuth, async (req: Request, res: Response) 
     res.json({ status: row.status, kycStatus: row.kyc_status ?? null });
   } catch (err) {
     logger.error({ err }, 'Session poll failed');
-    res.status(500).json({ error: 'POLL_FAILED' });
+    res.status(500).json(freshError('NETWORK_ERROR'));
   }
 });
 
@@ -246,7 +271,7 @@ app.post('/banking/provision', internalAuth, async (req: Request, res: Response)
     res.status(201).json({ accountProvisioned: true, kycStatus: result.kycStatus });
   } catch (err) {
     logger.error({ err }, 'Unit provisioning failed');
-    res.status(500).json({ error: 'BANKING_PROVISION_FAILED' });
+    res.status(500).json(freshError('BANK_CREATE_FAILED'));
   }
 });
 
@@ -264,7 +289,7 @@ app.get('/banking/balance/:studentId', internalAuth, async (req: Request, res: R
     res.json(balance);
   } catch (err) {
     logger.error({ err }, 'Balance fetch failed');
-    res.status(500).json({ error: 'BALANCE_FAILED' });
+    res.status(500).json(freshError('NETWORK_ERROR'));
   }
 });
 
@@ -278,7 +303,7 @@ app.post('/selfie-url', internalAuth, async (req: Request, res: Response) => {
     res.json({ url });
   } catch (err) {
     logger.error({ err }, 'Selfie URL refresh failed');
-    res.status(500).json({ error: 'SELFIE_URL_FAILED' });
+    res.status(500).json(freshError('NETWORK_ERROR'));
   }
 });
 

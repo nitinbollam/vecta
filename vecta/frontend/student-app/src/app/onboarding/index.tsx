@@ -27,6 +27,8 @@ import { Ionicons }       from '@expo/vector-icons';
 import { router }         from 'expo-router';
 import { VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients } from '../../constants/theme';
 import { useStudentStore, useHousingStore } from '../../stores';
+import { API_V1_BASE } from '../../config/api';
+import { parseVectaApiError, showVectaErrorAlert } from '../../lib/vecta-error-ui';
 
 // ---------------------------------------------------------------------------
 // Step definitions
@@ -159,7 +161,7 @@ export default function OnboardingScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const [loading,   setLoading]   = useState(false);
 
-  const { profile, mintVectaIdToken } = useStudentStore();
+  const { profile, fetchProfile } = useStudentStore();
   const { fetchTrustScore }           = useHousingStore();
 
   const step = STEPS[stepIndex]!;
@@ -190,19 +192,45 @@ export default function OnboardingScreen() {
           router.push('/onboarding/plaid-link');
           break;
 
-        case 'done':
-          // Mint Vecta ID token and go to dashboard
-          await mintVectaIdToken();
+        case 'done': {
+          const token = useStudentStore.getState().authToken;
+          if (!token) break;
+          const res = await fetch(`${API_V1_BASE}/identity/token/mint`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: '{}',
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const ve = parseVectaApiError(data);
+            if (ve) {
+              showVectaErrorAlert(ve, { onRetry: () => void handleCTA() });
+            } else {
+              Alert.alert('Error', 'Could not activate Vecta ID. Please try again.');
+            }
+            break;
+          }
+          const vectaIdNew = (data as { token?: string }).token;
+          if (vectaIdNew) {
+            useStudentStore.setState((s) => ({
+              profile: s.profile ? { ...s.profile, vectaIdToken: vectaIdNew } : s.profile,
+            }));
+          }
+          await fetchProfile();
           await fetchTrustScore();
           router.replace('/(tabs)');
           break;
+        }
       }
     } catch (err) {
       Alert.alert('Error', (err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [step.id, mintVectaIdToken, fetchTrustScore]);
+  }, [step.id, fetchProfile, fetchTrustScore]);
 
   const handleSkip = useCallback(() => {
     setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));

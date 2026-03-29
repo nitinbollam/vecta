@@ -11,8 +11,9 @@ import {
   AuditEventType,
 } from "@vecta/types";
 import { encryptField, decryptField } from "@vecta/crypto";
-import { createLogger } from "@vecta/logger";
+import { createLogger, withRetry } from "@vecta/logger";
 import { getPool } from "@vecta/database";
+import { onboardingFlowService } from "./onboarding-flow.service";
 
 const logger = createLogger("identity-unit");
 
@@ -89,14 +90,25 @@ class UnitAPIClient {
       },
     };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const res = await fetch(`${this.baseUrl}${path}`, init);
+    return withRetry(
+      async () => {
+        const res = await fetch(`${this.baseUrl}${path}`, init);
 
-    if (!res.ok) {
-      const errBody = await res.text();
-      throw new UnitAPIError(`Unit.co ${method} ${path} failed: ${res.status} ${errBody}`);
-    }
+        if (!res.ok) {
+          const errBody = await res.text();
+          throw new UnitAPIError(`Unit.co ${method} ${path} failed: ${res.status} ${errBody}`);
+        }
 
-    return res.json() as Promise<T>;
+        return res.json() as Promise<T>;
+      },
+      {
+        attempts: 3,
+        baseDelayMs: 1000,
+        maxDelayMs: 10000,
+        onRetry: (attempt: number, err: Error) =>
+          logger.warn({ attempt, err: err.message }, "Unit.co API retry"),
+      },
+    );
   }
 
   // Create an Individual Customer (F-1 student — passport-based, not SSN)
@@ -239,6 +251,7 @@ export class BaaSService {
     if (existing.rows[0]?.unit_customer_id) {
       logger.warn({ event: "UNIT_ALREADY_PROVISIONED", studentId: params.studentId });
       const accountId = decryptField(byteaOrTextToString(existing.rows[0].unit_account_id_enc));
+      await onboardingFlowService.advanceStep(params.studentId, "BANK_ACCOUNT_CREATED");
       return {
         unitCustomerId: existing.rows[0].unit_customer_id,
         unitAccountId: accountId,
@@ -318,6 +331,8 @@ export class BaaSService {
         kycStatus,
       });
 
+      await onboardingFlowService.advanceStep(params.studentId, "BANK_ACCOUNT_CREATED");
+
       return { unitCustomerId, unitAccountId, kycStatus };
 
     } catch (err) {
@@ -387,6 +402,7 @@ export class BaaSService {
     );
     const ex = existing.rows[0];
     if (ex?.unit_customer_id && ex.unit_account_id_enc != null) {
+      await onboardingFlowService.advanceStep(studentId, "BANK_ACCOUNT_CREATED");
       return {
         unitCustomerId: ex.unit_customer_id,
         unitAccountId: decryptField(byteaOrTextToString(ex.unit_account_id_enc)),

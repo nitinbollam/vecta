@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useRootNavigationState } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -64,7 +64,7 @@ function useMagicLinkHandler() {
       await AsyncStorage.setItem('student_id', data.studentId ?? data.id ?? '');
       setAuthToken(data.token);
       await fetchProfile();
-      router.replace('/(tabs)');
+      await replaceWithOnboardingResume(data.token);
     } catch {
       router.replace('/auth/login');
     }
@@ -85,12 +85,33 @@ function useMagicLinkHandler() {
 }
 
 // ---------------------------------------------------------------------------
+// Resume onboarding after app restart when a session token exists
+// ---------------------------------------------------------------------------
+
+function useOnboardingResumeOnLaunch() {
+  const nav = useRootNavigationState();
+  useEffect(() => {
+    if (!nav?.key) return;
+    let cancelled = false;
+    void (async () => {
+      const token = await AsyncStorage.getItem('auth_token');
+      if (!token || cancelled) return;
+      await replaceWithOnboardingResume(token);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nav?.key]);
+}
+
+// ---------------------------------------------------------------------------
 // Root layout — NO imperative auth redirects here
 // Auth guard lives in (tabs)/_layout.tsx as a declarative <Redirect>
 // ---------------------------------------------------------------------------
 
 export default function RootLayout() {
   useMagicLinkHandler();
+  useOnboardingResumeOnLaunch();
 
   const [fontsLoaded] = useFonts({
     BebasNeue_400Regular,

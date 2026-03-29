@@ -4,7 +4,7 @@
  * Transactional email via SendGrid dynamic templates (env template IDs) with HTML fallbacks.
  */
 
-import { createLogger } from '@vecta/logger';
+import { createLogger, withRetry } from '@vecta/logger';
 
 const logger = createLogger('email-service');
 
@@ -39,20 +39,31 @@ async function postSendGrid(body: unknown): Promise<void> {
     return;
   }
 
-  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${SENDGRID_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  await withRetry(
+    async () => {
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${SENDGRID_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-  if (!res.ok) {
-    const text = await res.text();
-    logger.error({ status: res.status, text }, 'SendGrid send failed');
-    throw new Error(`Email send failed: ${res.status}`);
-  }
+      if (!res.ok) {
+        const text = await res.text();
+        logger.error({ status: res.status, text }, 'SendGrid send failed');
+        throw new Error(`Email send failed: ${res.status}`);
+      }
+    },
+    {
+      attempts: 3,
+      baseDelayMs: 1000,
+      maxDelayMs: 10000,
+      onRetry: (attempt: number, err: Error) =>
+        logger.warn({ attempt, err: err.message }, 'SendGrid send retry'),
+    },
+  );
 }
 
 async function sendTemplateOrHtml(opts: {

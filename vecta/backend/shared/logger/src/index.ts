@@ -216,3 +216,5 @@ export function logComplianceEvent(
 }
 
 export type { Logger };
+
+export { withRetry, type RetryOptions } from "./retry";

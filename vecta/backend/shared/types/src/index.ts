@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+export { ERRORS, createError, freshError, type VectaError } from "./errors";
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export enum VisaStatus {

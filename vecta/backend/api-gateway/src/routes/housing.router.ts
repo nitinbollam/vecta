@@ -29,6 +29,8 @@ import { getPool, query, queryOne } from '@vecta/database';
 import { getSignedDownloadUrl } from '@vecta/storage';
 import Redis from 'ioredis';
 import { stripFreeText } from '../lib/sanitize';
+import { freshError } from '@vecta/types';
+import { onboardingFlowService } from '../../../services/identity-service/src/onboarding-flow.service';
 
 const logger = createLogger('housing-router');
 const router = Router();
@@ -434,10 +436,14 @@ async function handleEsimProvisionOrActivate(req: Request, res: Response): Promi
 
     if (!res2.ok) throw new Error(`Housing service: ${res2.status}`);
     const data = await res2.json();
+
+    await onboardingFlowService.advanceStep(studentId, 'ESIM_PROVISIONED');
+    await onboardingFlowService.complete(studentId);
+
     res.status(201).json(data);
   } catch (err) {
     logger.error({ err }, 'eSIM provision failed');
-    res.status(500).json({ error: 'ESIM_PROVISION_FAILED' });
+    res.status(500).json(freshError('ESIM_FAILED'));
   }
 }
 

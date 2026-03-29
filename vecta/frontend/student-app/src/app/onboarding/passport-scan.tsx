@@ -12,7 +12,7 @@
  *   5. Result
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, ActivityIndicator, ScrollView,
@@ -29,7 +29,7 @@ import {
   type VerificationStep,
   type VectaIDResult,
 } from '../../services/nfc/VectaIDService';
-import { LivenessDetector } from '../../services/nfc/LivenessDetector';
+import { parseVectaApiError, showVectaErrorAlert } from '../../lib/vecta-error-ui';
 
 // ---------------------------------------------------------------------------
 // Step definitions
@@ -130,6 +130,19 @@ export default function PassportScanScreen() {
   const { colors }      = useTheme();
   const authToken       = useStudentStore((s) => s.authToken);
   const fetchProfile    = useStudentStore((s) => s.fetchProfile);
+  const params          = useLocalSearchParams<{ onboardingError?: string }>();
+  const resumeAlertShown = useRef(false);
+
+  useEffect(() => {
+    const raw = params.onboardingError;
+    if (!raw || resumeAlertShown.current) return;
+    resumeAlertShown.current = true;
+    Alert.alert(
+      'Setup paused',
+      typeof raw === 'string' ? decodeURIComponent(raw) : String(raw),
+      [{ text: 'OK' }],
+    );
+  }, [params.onboardingError]);
 
   const [currentStep,   setCurrentStep]   = useState<VerificationStep>('IDLE');
   const [progress,      setProgress]      = useState(0);
@@ -217,7 +230,20 @@ export default function PassportScanScreen() {
         }),
       });
 
-      const data = await res.json() as { kycStatus: string; vectaIdToken?: string };
+      const data = await res.json().catch(() => ({})) as {
+        kycStatus?: string;
+        vectaIdToken?: string;
+      };
+
+      if (!res.ok) {
+        const ve = parseVectaApiError(data);
+        if (ve) {
+          showVectaErrorAlert(ve, { onRetry: () => void submitToBackend(verResult) });
+        } else {
+          Alert.alert('Verification Failed', 'Could not complete verification. Please try again.');
+        }
+        return;
+      }
 
       if (data.kycStatus === 'APPROVED') {
         await fetchProfile();
@@ -232,7 +258,15 @@ export default function PassportScanScreen() {
         Alert.alert('Verification Failed', data.kycStatus || 'Please try again.');
       }
     } catch (err) {
-      Alert.alert('Network Error', 'Could not submit verification. Please try again.');
+      showVectaErrorAlert(
+        {
+          code: 'NETWORK_ERROR',
+          message: 'Could not submit verification. Please try again.',
+          retryable: true,
+          supportRef: 'LOCAL',
+        },
+        { onRetry: () => void submitToBackend(verResult) },
+      );
     } finally {
       setSubmitting(false);
     }
