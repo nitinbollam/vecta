@@ -1,5 +1,5 @@
 // services/mobility-service/src/ride-matching.service.ts
-import { query, queryOne, withTransaction } from '@vecta/database';
+import { query, queryOne, withTransaction, getClient } from '@vecta/database';
 import { createLogger } from '@vecta/logger';
 import type { PoolClient } from 'pg';
 
@@ -175,7 +175,11 @@ export async function startRide(driverId: string, rideId: string): Promise<void>
 }
 
 export async function completeRide(driverId: string, rideId: string, actualMiles: number): Promise<void> {
-  return withTransaction(async (client: PoolClient) => {
+  const client = await getClient();
+  let committed = false;
+  try {
+    await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+
     const ride = await client.query(
       `SELECT * FROM rides WHERE id=$1 AND driver_id=$2 AND status='IN_PROGRESS' FOR UPDATE`,
       [rideId, driverId],
@@ -191,6 +195,56 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
     const actualFareCents = Math.round(actualMiles * Number(r.price_per_mile_cents));
     const platformFee = Math.round(actualFareCents * 0.1);
     const driverPayout = actualFareCents - platformFee;
+
+    const riderAccount = await client.query(
+      `SELECT la.id,
+              (SELECT COALESCE(MAX(balance_after_cents), 0)
+               FROM ledger_entries WHERE account_id = la.id)::text AS balance
+       FROM ledger_accounts la
+       WHERE la.student_id = $1`,
+      [r.rider_student_id],
+    );
+
+    let accountId: string;
+    let currentBalance: number;
+
+    if (!riderAccount.rows[0]) {
+      const newAccount = await client.query(
+        `INSERT INTO ledger_accounts
+           (student_id, account_number, routing_number, account_type, status, currency)
+         VALUES ($1, 'V' || replace(gen_random_uuid()::text, '-', ''), '021000021', 'CHECKING', 'ACTIVE', 'USD')
+         RETURNING id`,
+        [r.rider_student_id],
+      );
+      accountId = newAccount.rows[0]!.id;
+      currentBalance = 0;
+    } else {
+      accountId = riderAccount.rows[0]!.id;
+      currentBalance = Number.parseInt(riderAccount.rows[0]!.balance, 10);
+      if (!Number.isFinite(currentBalance)) currentBalance = 0;
+    }
+
+    if (currentBalance < actualFareCents) {
+      await client.query(`UPDATE rides SET status='PAYMENT_FAILED' WHERE id=$1`, [rideId]);
+      await client.query(
+        `INSERT INTO ride_audit_log (ride_id, event, actor, data)
+         VALUES ($1, 'PAYMENT_FAILED', 'SYSTEM', $2::jsonb)`,
+        [
+          rideId,
+          JSON.stringify({
+            required: actualFareCents,
+            available: currentBalance,
+            message: 'Insufficient Vecta balance',
+          }),
+        ],
+      );
+      await client.query('COMMIT');
+      committed = true;
+      logger.warn({ rideId, riderId: r.rider_student_id, actualFareCents, currentBalance }, 'ride payment failed');
+      throw new Error('INSUFFICIENT_BALANCE');
+    }
+
+    const balanceAfterDebit = currentBalance - actualFareCents;
 
     await client.query(
       `
@@ -228,23 +282,16 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
     );
 
     await client.query(
-      `
-      INSERT INTO ledger_entries (
+      `INSERT INTO ledger_entries (
         transaction_id, account_id, entry_type,
         amount_cents, balance_after_cents, description, status
-      )
-      SELECT
-        gen_random_uuid(),
-        la.id,
-        'DEBIT',
-        $1::bigint,
-        (SELECT COALESCE(MAX(balance_after_cents),0) FROM ledger_entries WHERE account_id=la.id) - $1::bigint,
-        $2,
-        'POSTED'
-      FROM ledger_accounts la
-      WHERE la.student_id = $3
-    `,
-      [actualFareCents, `Vecta Ride — ${r.pickup_address} → ${r.dropoff_address}`, r.rider_student_id],
+      ) VALUES (gen_random_uuid(), $1, 'DEBIT', $2::bigint, $3::bigint, $4, 'POSTED')`,
+      [
+        accountId,
+        actualFareCents,
+        balanceAfterDebit,
+        `Vecta Ride — ${r.pickup_address} → ${r.dropoff_address}`,
+      ],
     );
 
     await client.query(
@@ -257,5 +304,15 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
       driverId,
       JSON.stringify({ actualMiles, actualFareCents, driverPayout }),
     ]);
-  });
+
+    await client.query('COMMIT');
+    committed = true;
+  } catch (err) {
+    if (!committed) {
+      await client.query('ROLLBACK').catch(() => undefined);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 }

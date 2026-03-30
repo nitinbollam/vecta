@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
+import MapboxMap from '../../components/MapboxMap';
 import { API_V1_BASE, getAuthHeaders, getWsBase } from '../../config/api';
 import { useDriverStore } from '../../stores/driver-store';
 
@@ -23,6 +24,7 @@ export default function DriverHome() {
   const [busy, setBusy] = useState(false);
   const [incoming, setIncoming] = useState<IncomingRide | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(30);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const goOnline = useCallback(async () => {
@@ -104,6 +106,32 @@ export default function DriverHome() {
   }, [incoming?.rideId]);
 
   useEffect(() => {
+    if (!online) {
+      setCurrentLocation(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setCurrentLocation({ lat: p.coords.latitude, lng: p.coords.longitude });
+      } catch {
+        setCurrentLocation(null);
+      }
+    })();
+    const locIv = setInterval(() => {
+      void (async () => {
+        try {
+          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setCurrentLocation({ lat: p.coords.latitude, lng: p.coords.longitude });
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 10000);
+    return () => clearInterval(locIv);
+  }, [online]);
+
+  useEffect(() => {
     if (!online || !driverId) return;
     const tick = async () => {
       try {
@@ -145,8 +173,28 @@ export default function DriverHome() {
 
   const declineRide = useCallback(() => setIncoming(null), []);
 
+  const mapReady = Boolean(process.env.EXPO_PUBLIC_MAPBOX_TOKEN);
+
   return (
     <View style={styles.root}>
+      {online && mapReady && currentLocation ? (
+        <MapboxMap
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            opacity: 0.35,
+            minHeight: undefined,
+            borderRadius: 0,
+          }}
+          centerLat={currentLocation.lat}
+          centerLng={currentLocation.lng}
+          zoom={13}
+          pins={[]}
+        />
+      ) : null}
       {online ? (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>YOU ARE ONLINE</Text>
@@ -198,8 +246,9 @@ export default function DriverHome() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#001F3F', paddingTop: 56, paddingHorizontal: 24 },
+  root: { flex: 1, backgroundColor: '#001F3F', paddingTop: 56, paddingHorizontal: 24, position: 'relative' },
   banner: {
+    zIndex: 1,
     backgroundColor: '#00C896',
     paddingVertical: 10,
     borderRadius: 8,
@@ -207,8 +256,9 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   bannerText: { fontWeight: '800', color: '#001F3F' },
-  headline: { color: '#9CB4C8', fontSize: 16, textAlign: 'center', marginBottom: 32 },
+  headline: { zIndex: 1, color: '#9CB4C8', fontSize: 16, textAlign: 'center', marginBottom: 32 },
   goBtn: {
+    zIndex: 1,
     alignSelf: 'center',
     width: 200,
     height: 200,
@@ -220,6 +270,7 @@ const styles = StyleSheet.create({
   },
   goBtnText: { fontSize: 22, fontWeight: '900', color: '#001F3F' },
   offBtn: {
+    zIndex: 1,
     alignSelf: 'center',
     paddingVertical: 14,
     paddingHorizontal: 32,
@@ -230,6 +281,7 @@ const styles = StyleSheet.create({
   },
   offBtnText: { color: '#FCA5A5', fontWeight: '700' },
   card: {
+    zIndex: 1,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 16,
     padding: 20,

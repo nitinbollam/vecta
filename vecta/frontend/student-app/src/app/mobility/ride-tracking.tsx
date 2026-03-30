@@ -1,19 +1,13 @@
 /**
- * Live ride tracking — REST poll + WebSocket for driver location and status.
+ * Live ride tracking — REST poll + WebSocket + Mapbox GL.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MapboxMap from '../../components/MapboxMap';
 import { API_V1_BASE, getAuthHeaders, getWsBase, MAPBOX_TOKEN } from '../../config/api';
 import { VectaColors, VectaFonts, VectaRadius, VectaSpacing } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
@@ -21,10 +15,10 @@ import { useTheme } from '../../context/ThemeContext';
 type RideRow = Record<string, unknown> & {
   id: string;
   status: string;
-  pickup_lat: string;
-  pickup_lng: string;
-  dropoff_lat: string;
-  dropoff_lng: string;
+  pickup_lat: string | number;
+  pickup_lng: string | number;
+  dropoff_lat: string | number;
+  dropoff_lng: string | number;
   pickup_address: string;
   dropoff_address: string;
   driver_name: string | null;
@@ -40,7 +34,7 @@ export default function RideTrackingScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const [ride, setRide] = useState<RideRow | null>(null);
-  const [driverLoc, setDriverLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [driverPin, setDriverPin] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -80,7 +74,7 @@ export default function RideTrackingScreen() {
         try {
           const msg = JSON.parse(String(ev.data)) as { type?: string; lat?: number; lng?: number; status?: string };
           if (msg.type === 'DRIVER_LOCATION' && msg.lat != null && msg.lng != null) {
-            setDriverLoc({ lat: msg.lat, lng: msg.lng });
+            setDriverPin({ lat: msg.lat, lng: msg.lng });
           }
           if (msg.type === 'RIDE_STATUS' && msg.status) {
             void fetchRide();
@@ -98,19 +92,6 @@ export default function RideTrackingScreen() {
     }
   }, [rideId, fetchRide]);
 
-  const staticMapUrl = useMemo(() => {
-    if (!MAPBOX_TOKEN || !ride) return null;
-    const plng = Number(ride.pickup_lng);
-    const plat = Number(ride.pickup_lat);
-    const dlng = Number(ride.dropoff_lng);
-    const dlat = Number(ride.dropoff_lat);
-    const pins = [`pin-s+00e6cc(${plng},${plat})`, `pin-s+ef4444(${dlng},${dlat})`];
-    if (driverLoc) {
-      pins.push(`pin-s+10b981(${driverLoc.lng},${driverLoc.lat})`);
-    }
-    return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${pins.join(',')}/auto/600x420@2x?access_token=${MAPBOX_TOKEN}`;
-  }, [ride, driverLoc]);
-
   const statusLine = useMemo(() => {
     if (!ride) return '';
     switch (ride.status) {
@@ -123,8 +104,10 @@ export default function RideTrackingScreen() {
         return 'Driver has arrived · Head outside';
       case 'IN_PROGRESS':
         return 'Ride in progress';
+      case 'PAYMENT_FAILED':
+        return 'Payment issue — please add funds to your Vecta account';
       default:
-        return ride.status.replace(/_/g, ' ');
+        return String(ride.status).replace(/_/g, ' ');
     }
   }, [ride]);
 
@@ -145,6 +128,11 @@ export default function RideTrackingScreen() {
 
   const surface = isDark ? VectaColors.primaryMid : VectaColors.surfaceBase;
   const sub = isDark ? '#7A9BAD' : VectaColors.textSecondary;
+
+  const plat = ride ? Number(ride.pickup_lat) : NaN;
+  const plng = ride ? Number(ride.pickup_lng) : NaN;
+  const dlat = ride ? Number(ride.dropoff_lat) : NaN;
+  const dlng = ride ? Number(ride.dropoff_lng) : NaN;
 
   if (loading && !ride) {
     return (
@@ -177,13 +165,56 @@ export default function RideTrackingScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      {staticMapUrl ? (
-        <Image source={{ uri: staticMapUrl }} style={styles.map} resizeMode="cover" />
-      ) : (
-        <View style={[styles.mapFallback, { backgroundColor: isDark ? '#152238' : VectaColors.surface1 }]}>
-          <Text style={{ color: sub, fontFamily: VectaFonts.regular }}>Add Mapbox token for map preview</Text>
-        </View>
-      )}
+      <View style={styles.mapWrap}>
+        {MAPBOX_TOKEN ? (
+          <MapboxMap
+            style={{ flex: 1, height: undefined, minHeight: 280 }}
+            centerLat={driverPin?.lat ?? (Number.isFinite(plat) ? plat : undefined)}
+            centerLng={driverPin?.lng ?? (Number.isFinite(plng) ? plng : undefined)}
+            zoom={15}
+            pins={[
+              ...(Number.isFinite(plat) && Number.isFinite(plng)
+                ? [
+                    {
+                      id: 'pickup',
+                      lat: plat,
+                      lng: plng,
+                      color: '#00E6CC',
+                      label: 'Your pickup',
+                    },
+                  ]
+                : []),
+              ...(Number.isFinite(dlat) && Number.isFinite(dlng)
+                ? [
+                    {
+                      id: 'dropoff',
+                      lat: dlat,
+                      lng: dlng,
+                      color: '#EF4444',
+                      label: 'Destination',
+                    },
+                  ]
+                : []),
+              ...(driverPin
+                ? [
+                    {
+                      id: 'driver',
+                      lat: driverPin.lat,
+                      lng: driverPin.lng,
+                      color: '#001F3F',
+                      icon: 'car' as const,
+                      label: 'Your driver',
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        ) : (
+          <View style={[styles.mapFallback, { backgroundColor: isDark ? '#152238' : VectaColors.surface1 }]}>
+            <Text style={{ color: sub, fontFamily: VectaFonts.regular }}>Add EXPO_PUBLIC_MAPBOX_TOKEN for live map</Text>
+          </View>
+        )}
+      </View>
 
       <View style={[styles.sheet, { backgroundColor: isDark ? '#0F1628' : VectaColors.surfaceBase, borderColor: colors.border }]}>
         <Text style={[styles.status, { color: VectaColors.accent }]}>{statusLine}</Text>
@@ -222,15 +253,15 @@ const styles = StyleSheet.create({
     paddingVertical: VectaSpacing.sm,
   },
   topTitle: { fontFamily: VectaFonts.semiBold, fontSize: 18 },
-  map: { width: '100%', height: '52%' },
-  mapFallback: { width: '100%', height: '52%', justifyContent: 'center', alignItems: 'center' },
+  mapWrap: { flex: 1, minHeight: 280 },
+  mapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   sheet: {
-    flex: 1,
     borderTopLeftRadius: VectaRadius.lg,
     borderTopRightRadius: VectaRadius.lg,
     marginTop: -16,
     padding: VectaSpacing.lg,
     borderWidth: 1,
+    maxHeight: '42%',
   },
   status: { fontFamily: VectaFonts.semiBold, fontSize: 16 },
   driver: { fontFamily: VectaFonts.medium, fontSize: 18, marginTop: 12 },

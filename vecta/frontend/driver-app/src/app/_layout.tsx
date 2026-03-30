@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import '../tasks/driver-location-task';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';

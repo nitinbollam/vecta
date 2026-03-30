@@ -1,5 +1,5 @@
 /**
- * Book a ride — pickup (GPS), dropoff (Mapbox geocode), fare preview, request.
+ * Book a ride — pickup (GPS), dropoff (Mapbox geocode), native map, Directions API route.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,7 +10,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Image,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,31 +18,58 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MapboxMap from '../../components/MapboxMap';
 import { API_V1_BASE, getAuthHeaders, MAPBOX_TOKEN } from '../../config/api';
 import { VectaColors, VectaFonts, VectaRadius, VectaSpacing } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
 import { estimateFareCents, haversineMiles } from '../../lib/ride-pricing';
-
-type GeocodeFeature = {
-  id: string;
-  place_name: string;
-  center: [number, number];
-};
+import { searchAddress, reverseGeocode, type GeocodingResult } from '../../services/geocoding';
 
 export default function BookRideScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const [pickupLat, setPickupLat] = useState<number | null>(null);
-  const [pickupLng, setPickupLng] = useState<number | null>(null);
-  const [pickupLabel, setPickupLabel] = useState('Your current location');
-  const [dropQuery, setDropQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<GeocodeFeature[]>([]);
-  const [dropoff, setDropoff] = useState<GeocodeFeature | null>(null);
+
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [pickupAddress, setPickupAddress] = useState('Current location');
+  const [dropoffInput, setDropoffInput] = useState('');
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffPlaceName, setDropoffPlaceName] = useState<string | null>(null);
+  const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+  const [directionsMiles, setDirectionsMiles] = useState<number | null>(null);
+  const [estimatedDurationMin, setEstimatedDurationMin] = useState<number | null>(null);
+
+  const [searchResults, setSearchResults] = useState<GeocodingResult[]>([]);
+  const [showResults, setShowResults] = useState(false);
   const [loadingLoc, setLoadingLoc] = useState(true);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [nearbyDrivers, setNearbyDrivers] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const fetchRoute = useCallback(
+    async (fromLng: number, fromLat: number, toLng: number, toLat: number) => {
+      const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+      if (!token) return;
+      try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&access_token=${token}`;
+        const res = await fetch(url);
+        const data = (await res.json()) as {
+          routes?: { geometry: { coordinates: [number, number][] }; distance: number; duration: number }[];
+        };
+        if (data.routes?.[0]) {
+          const coords = data.routes[0].geometry.coordinates as [number, number][];
+          setRouteCoords(coords);
+          setDirectionsMiles(data.routes[0].distance / 1609.34);
+          setEstimatedDurationMin(Math.round(data.routes[0].duration / 60));
+        }
+      } catch {
+        setRouteCoords([]);
+        setDirectionsMiles(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     (async () => {
@@ -54,9 +80,13 @@ export default function BookRideScreen() {
           setLoadingLoc(false);
           return;
         }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setPickupLat(pos.coords.latitude);
-        setPickupLng(pos.coords.longitude);
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        setUserLocation({ lat, lng });
+        setPickupCoords({ lat, lng });
+        const address = await reverseGeocode(lat, lng);
+        setPickupAddress(address);
       } catch {
         setErr('Could not read your location.');
       } finally {
@@ -66,71 +96,64 @@ export default function BookRideScreen() {
   }, []);
 
   useEffect(() => {
-    if (!MAPBOX_TOKEN || dropQuery.trim().length < 3) {
-      setSuggestions([]);
-      return;
-    }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       void (async () => {
+        if (dropoffInput.trim().length < 3) {
+          setSearchResults([]);
+          return;
+        }
         setLoadingGeo(true);
         try {
-          const q = encodeURIComponent(dropQuery.trim());
-          const res = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${q}.json?access_token=${MAPBOX_TOKEN}&limit=5`,
-          );
-          const data = (await res.json()) as { features?: GeocodeFeature[] };
-          setSuggestions(data.features ?? []);
-        } catch {
-          setSuggestions([]);
+          const results = await searchAddress(dropoffInput.trim());
+          setSearchResults(results);
+          setShowResults(true);
         } finally {
           setLoadingGeo(false);
         }
       })();
-    }, 350);
-    return () => clearTimeout(t);
-  }, [dropQuery]);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [dropoffInput]);
 
-  const estimatedMiles = useMemo(() => {
-    if (pickupLat == null || pickupLng == null || !dropoff) return 0;
-    return haversineMiles(pickupLat, pickupLng, dropoff.center[1], dropoff.center[0]);
-  }, [pickupLat, pickupLng, dropoff]);
+  const haversineEst = useMemo(() => {
+    if (!pickupCoords || !dropoffCoords) return 0;
+    return haversineMiles(pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng);
+  }, [pickupCoords, dropoffCoords]);
 
-  const fare = useMemo(() => estimateFareCents(Math.max(estimatedMiles, 0.1)), [estimatedMiles]);
+  const estimatedMiles = directionsMiles ?? haversineEst;
 
-  const staticMapUrl = useMemo(() => {
-    if (!MAPBOX_TOKEN || pickupLat == null || pickupLng == null || !dropoff) return null;
-    const a = `${pickupLng},${pickupLat}`;
-    const b = `${dropoff.center[0]},${dropoff.center[1]}`;
-    return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+00e6cc(${a}),pin-s+ef4444(${b})/auto/600x360@2x?access_token=${MAPBOX_TOKEN}`;
-  }, [pickupLat, pickupLng, dropoff]);
+  const fare = useMemo(
+    () => estimateFareCents(Math.max(estimatedMiles || 0, 0.1)),
+    [estimatedMiles],
+  );
 
   const loadNearby = useCallback(async () => {
-    if (pickupLat == null || pickupLng == null) return;
+    if (!pickupCoords) return;
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(
-        `${API_V1_BASE}/mobility/rides/nearby-drivers?lat=${pickupLat}&lng=${pickupLng}`,
+        `${API_V1_BASE}/mobility/rides/nearby-drivers?lat=${pickupCoords.lat}&lng=${pickupCoords.lng}`,
         { headers },
       );
       if (res.ok) {
-        const d = (await res.json()) as { drivers: { distance_meters?: number }[] };
+        const d = (await res.json()) as { drivers: unknown[] };
         setNearbyDrivers((d.drivers ?? []).length);
       }
     } catch {
       setNearbyDrivers(null);
     }
-  }, [pickupLat, pickupLng]);
+  }, [pickupCoords]);
 
   useEffect(() => {
-    if (pickupLat != null && pickupLng != null) void loadNearby();
-  }, [pickupLat, pickupLng, loadNearby]);
+    if (pickupCoords) void loadNearby();
+  }, [pickupCoords, loadNearby]);
 
   const pickupEtaHint =
     nearbyDrivers != null && nearbyDrivers > 0 ? '~5–12 min pickup' : null;
 
   const requestRide = useCallback(async () => {
     setErr(null);
-    if (pickupLat == null || pickupLng == null || !dropoff) {
+    if (!pickupCoords || !dropoffCoords || !dropoffPlaceName) {
       setErr('Set pickup and dropoff first.');
       return;
     }
@@ -141,12 +164,12 @@ export default function BookRideScreen() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          pickupLat,
-          pickupLng,
-          pickupAddress: pickupLabel,
-          dropoffLat: dropoff.center[1],
-          dropoffLng: dropoff.center[0],
-          dropoffAddress: dropoff.place_name,
+          pickupLat: pickupCoords.lat,
+          pickupLng: pickupCoords.lng,
+          pickupAddress,
+          dropoffLat: dropoffCoords.lat,
+          dropoffLng: dropoffCoords.lng,
+          dropoffAddress: dropoffPlaceName,
           estimatedMiles: Math.round(estimatedMiles * 100) / 100,
         }),
       });
@@ -159,7 +182,7 @@ export default function BookRideScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [pickupLat, pickupLng, pickupLabel, dropoff, estimatedMiles]);
+  }, [pickupCoords, pickupAddress, dropoffCoords, dropoffPlaceName, estimatedMiles]);
 
   const surface = isDark ? VectaColors.primaryMid : VectaColors.surfaceBase;
   const sub = isDark ? '#7A9BAD' : VectaColors.textSecondary;
@@ -185,7 +208,7 @@ export default function BookRideScreen() {
         >
           <Ionicons name="location" size={20} color={VectaColors.accent} />
           <Text style={[styles.fieldText, { color: colors.text }]} numberOfLines={2}>
-            {loadingLoc ? 'Getting location…' : pickupLabel}
+            {loadingLoc ? 'Getting location…' : pickupAddress}
           </Text>
         </TouchableOpacity>
 
@@ -194,37 +217,96 @@ export default function BookRideScreen() {
           style={[styles.input, { borderColor: colors.border, color: colors.text, backgroundColor: isDark ? '#152238' : VectaColors.surface1 }]}
           placeholder="Search address"
           placeholderTextColor={sub}
-          value={dropQuery}
+          value={dropoffInput}
           onChangeText={(t) => {
-            setDropQuery(t);
-            setDropoff(null);
+            setDropoffInput(t);
+            setDropoffCoords(null);
+            setDropoffPlaceName(null);
+            setRouteCoords([]);
+            setDirectionsMiles(null);
+          }}
+          onFocus={() => {
+            if (searchResults.length > 0) setShowResults(true);
           }}
         />
         {loadingGeo ? <ActivityIndicator color={VectaColors.accent} style={{ marginTop: 8 }} /> : null}
-        {suggestions.map((s) => (
-          <TouchableOpacity
-            key={s.id}
-            style={[styles.suggest, { borderBottomColor: colors.border }]}
-            onPress={() => {
-              setDropoff(s);
-              setDropQuery(s.place_name);
-              setSuggestions([]);
-            }}
+
+        {showResults && searchResults.length > 0 ? (
+          <View
+            style={[
+              styles.resultsContainer,
+              { backgroundColor: isDark ? '#152238' : VectaColors.surface1, borderColor: colors.border },
+            ]}
           >
-            <Text style={{ color: colors.text, fontFamily: VectaFonts.regular }} numberOfLines={2}>
-              {s.place_name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+            {searchResults.map((result) => (
+              <TouchableOpacity
+                key={result.id}
+                style={[styles.resultRow, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setDropoffPlaceName(result.placeName);
+                  setDropoffInput(result.placeName);
+                  setDropoffCoords({ lat: result.lat, lng: result.lng });
+                  setShowResults(false);
+                  if (pickupCoords) {
+                    void fetchRoute(pickupCoords.lng, pickupCoords.lat, result.lng, result.lat);
+                  }
+                }}
+              >
+                <Ionicons name="location-outline" size={16} color="#5A7080" />
+                <Text style={[styles.resultText, { color: colors.text }]} numberOfLines={2}>
+                  {result.placeName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
 
         {!MAPBOX_TOKEN ? (
           <Text style={[styles.warn, { color: VectaColors.warning }]}>
-            Add EXPO_PUBLIC_MAPBOX_TOKEN for address search and map preview.
+            Add EXPO_PUBLIC_MAPBOX_TOKEN for maps, search, and routing.
           </Text>
         ) : null}
 
-        {staticMapUrl ? (
-          <Image source={{ uri: staticMapUrl }} style={styles.map} resizeMode="cover" />
+        {MAPBOX_TOKEN && pickupCoords ? (
+          <MapboxMap
+            style={{ height: 250, marginTop: 16, marginHorizontal: 0, marginBottom: 16 }}
+            centerLat={pickupCoords.lat ?? userLocation?.lat}
+            centerLng={pickupCoords.lng ?? userLocation?.lng}
+            pins={[
+              ...(pickupCoords
+                ? [
+                    {
+                      id: 'pickup',
+                      lat: pickupCoords.lat,
+                      lng: pickupCoords.lng,
+                      color: '#00E6CC',
+                      icon: 'pickup' as const,
+                      label: 'Pickup',
+                    },
+                  ]
+                : []),
+              ...(dropoffCoords
+                ? [
+                    {
+                      id: 'dropoff',
+                      lat: dropoffCoords.lat,
+                      lng: dropoffCoords.lng,
+                      color: '#EF4444',
+                      icon: 'dropoff' as const,
+                      label: 'Dropoff',
+                    },
+                  ]
+                : []),
+            ]}
+            route={
+              routeCoords.length > 0
+                ? {
+                    coordinates: routeCoords,
+                    color: '#00E6CC',
+                  }
+                : undefined
+            }
+          />
         ) : null}
 
         <View style={[styles.fareCard, { backgroundColor: isDark ? '#152238' : VectaColors.infoBg, borderColor: colors.border }]}>
@@ -233,7 +315,10 @@ export default function BookRideScreen() {
             ${(fare.estimatedFareCents / 100).toFixed(2)}
           </Text>
           <Text style={[styles.fareMeta, { color: sub }]}>
-            Distance ~{estimatedMiles.toFixed(1)} mi · ${(fare.pricePerMileCents / 100).toFixed(2)}/mile · 10% platform fee
+            Distance ~{(estimatedMiles || 0).toFixed(1)} mi
+            {estimatedDurationMin != null ? ` · ~${estimatedDurationMin} min` : ''} · $
+            {(fare.pricePerMileCents / 100).toFixed(2)}
+            /mile · 10% platform fee
           </Text>
           <Text style={[styles.fareMeta, { color: sub }]}>Your driver keeps 90%</Text>
         </View>
@@ -291,8 +376,22 @@ const styles = StyleSheet.create({
     fontFamily: VectaFonts.regular,
     fontSize: 16,
   },
-  suggest: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  map: { width: '100%', height: 200, borderRadius: VectaRadius.lg, marginTop: 16 },
+  resultsContainer: {
+    marginTop: 4,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+    maxHeight: 220,
+    overflow: 'hidden',
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  resultText: { flex: 1, fontFamily: VectaFonts.regular, fontSize: 14 },
   fareCard: { marginTop: 18, padding: VectaSpacing.lg, borderRadius: VectaRadius.lg, borderWidth: 1 },
   fareTitle: { fontFamily: VectaFonts.medium, fontSize: 14 },
   fareAmt: { fontFamily: VectaFonts.bold, fontSize: 28, marginTop: 6 },

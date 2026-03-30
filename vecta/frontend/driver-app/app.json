@@ -30,7 +30,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Vecta Driver to use your location."
+          "locationAlwaysAndWhenInUsePermission": "Vecta Driver needs your location to match you with riders and for navigation.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
       ]
     ],

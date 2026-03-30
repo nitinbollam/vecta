@@ -89,7 +89,7 @@ CREATE TABLE rides (
                              CHECK (status IN (
                                'REQUESTED','MATCHED','DRIVER_ACCEPTED',
                                'DRIVER_ARRIVING','IN_PROGRESS',
-                               'COMPLETED','CANCELLED','NO_DRIVER_FOUND')),
+                               'COMPLETED','CANCELLED','NO_DRIVER_FOUND','PAYMENT_FAILED')),
 
   requested_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   matched_at               TIMESTAMPTZ,
@@ -130,3 +130,14 @@ CREATE TABLE driver_push_tokens (
   expo_token   TEXT NOT NULL,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- -----------------------------------------------------------------------------
+-- Existing databases that already ran an older 011 without PAYMENT_FAILED:
+-- run manually (or apply migration 012_rides_payment_failed_status.sql):
+--
+-- ALTER TABLE rides DROP CONSTRAINT IF EXISTS rides_status_check;
+-- ALTER TABLE rides ADD CONSTRAINT rides_status_check
+--   CHECK (status IN ('REQUESTED','MATCHED','DRIVER_ACCEPTED',
+--     'DRIVER_ARRIVING','IN_PROGRESS','COMPLETED',
+--     'CANCELLED','NO_DRIVER_FOUND','PAYMENT_FAILED'));
+-- -----------------------------------------------------------------------------

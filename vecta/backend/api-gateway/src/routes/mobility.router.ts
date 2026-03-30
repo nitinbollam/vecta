@@ -624,6 +624,13 @@ router.post('/driver/complete/:rideId', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'INVALID_BODY' });
       return;
     }
+    if ((err as Error).message === 'INSUFFICIENT_BALANCE') {
+      res.status(402).json({
+        error: 'INSUFFICIENT_BALANCE',
+        message: 'Rider had insufficient Vecta balance; ride marked PAYMENT_FAILED.',
+      });
+      return;
+    }
     res.status(400).json({ error: (err as Error).message });
   }
 });
