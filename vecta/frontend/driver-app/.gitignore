@@ -1,0 +1,3 @@
+# Native projects from `expo prebuild` — regenerate locally. Do not commit: gradle.properties may contain MAPBOX_DOWNLOADS_TOKEN.
+/android
+/ios

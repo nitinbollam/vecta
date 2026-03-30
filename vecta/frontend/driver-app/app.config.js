@@ -60,10 +60,9 @@ module.exports = ({ config }) =>
       scheme: 'vecta-driver',
       extra: {
         router: { origin: false },
-        // After `npx eas init`, set EAS_PROJECT_ID or add eas.projectId here for Expo push + EAS Build.
-        ...(process.env.EAS_PROJECT_ID
-          ? { eas: { projectId: process.env.EAS_PROJECT_ID } }
-          : {}),
+        eas: {
+          projectId: 'e1a2ecf2-805e-42fa-bd63-9bbe88def6a0',
+        },
       },
     },
     {
