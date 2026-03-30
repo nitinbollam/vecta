@@ -7,6 +7,7 @@ import { validateSecurityEnv } from "./validate-env";
 validateSecurityEnv();
 
 import express from "express";
+import { createServer } from "http";
 import helmet from "helmet";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -410,9 +411,22 @@ async function bootstrap() {
   // ── Error Handler (must be last) ─────────────────────────────────────────
   app.use(errorHandler);
 
-  // ── Listen ───────────────────────────────────────────────────────────────
+  // ── Listen (HTTP + WebSocket on same port) ───────────────────────────────
   const PORT = Number(process.env.PORT) || 4000;
-  app.listen(PORT, "0.0.0.0", () => {
+  const httpServer = createServer(app);
+  try {
+    const { attachRideWebSocketServer } = await import(
+      "../../services/mobility-service/src/ride-tracking.service"
+    );
+    attachRideWebSocketServer(httpServer);
+  } catch (err) {
+    logger.warn(
+      { event: "WS_ATTACH_FAILED", error: (err as Error).message },
+      "Ride WebSocket server not attached",
+    );
+  }
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
     logger.info(
       { event: "SERVER_STARTED", port: PORT, services, mode: directMode ? "DIRECT" : "MICROSERVICE" },
       "API Gateway started",
@@ -423,6 +437,16 @@ async function bootstrap() {
   // ── Graceful shutdown ────────────────────────────────────────────────────
   const shutdown = async (signal: string) => {
     logger.info({ event: "GRACEFUL_SHUTDOWN", signal });
+    try {
+      const { getRideWebSocketServer } = await import(
+        "../../services/mobility-service/src/ride-tracking.service"
+      );
+      const wss = getRideWebSocketServer();
+      wss?.close();
+    } catch {
+      /* ignore */
+    }
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     await db.end();
     await redis.quit();
     process.exit(0);

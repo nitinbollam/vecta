@@ -5,6 +5,7 @@
   "description": "Vecta — Life-as-a-Service for F-1 International Students",
   "workspaces": [
     "frontend/student-app",
+    "frontend/driver-app",
     "frontend/landlord-portal",
     "backend/api-gateway",
     "backend/services/identity-service",

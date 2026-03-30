@@ -49,6 +49,12 @@
       "expo-router",
       "expo-font",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Vecta needs your location to find nearby drivers and match rides."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#001F3F",

@@ -19,7 +19,20 @@ import {
   vehicleEnrollmentService,
   dsoComplianceMemoService,
   flightRecorderService,
+  F1ComplianceError,
 } from '../../../services/mobility-service/src/flight-recorder.service';
+import {
+  requestRide,
+  acceptRide,
+  startRide,
+  completeRide,
+} from '../../../services/mobility-service/src/ride-matching.service';
+import {
+  applyAsDriver,
+  goOnline,
+  goOffline,
+} from '../../../services/mobility-service/src/driver-onboarding.service';
+import { notifyDriver } from '../../../services/mobility-service/src/ride-tracking.service';
 import { authMiddleware, requireKYC, requirePermission } from '@vecta/auth';
 import { createLogger, logComplianceEvent } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
@@ -249,6 +262,465 @@ router.post('/dso-memo/generate', async (req: Request, res: Response) => {
       return;
     }
     res.status(500).json({ error: 'MEMO_GENERATION_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Peer rides — riders & approved drivers
+// ---------------------------------------------------------------------------
+
+router.post('/rides/request', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        pickupLat: z.number(),
+        pickupLng: z.number(),
+        pickupAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        dropoffLat: z.number(),
+        dropoffLng: z.number(),
+        dropoffAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        estimatedMiles: z.number().positive().max(500),
+      })
+      .parse(req.body);
+    const riderStudentId = req.vectaUser!.sub;
+
+    const result = await requestRide({
+      riderStudentId,
+      pickupLat: body.pickupLat,
+      pickupLng: body.pickupLng,
+      pickupAddress: body.pickupAddress,
+      dropoffLat: body.dropoffLat,
+      dropoffLng: body.dropoffLng,
+      dropoffAddress: body.dropoffAddress,
+      estimatedMiles: body.estimatedMiles,
+    });
+
+    if (result.driver?.id) {
+      notifyDriver(result.driver.id as string, {
+        type: 'RIDE_REQUEST',
+        rideId: result.rideId,
+        fare: result.fare,
+        pickupAddress: body.pickupAddress,
+        dropoffAddress: body.dropoffAddress,
+        estimatedMiles: body.estimatedMiles,
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, 'rides/request failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    res.status(500).json({ error: 'RIDE_REQUEST_FAILED' });
+  }
+});
+
+router.get('/rides/mine', async (req: Request, res: Response) => {
+  try {
+    const r = await query(
+      `SELECT id, pickup_address, dropoff_address, status, requested_at, actual_fare_cents, estimated_fare_cents
+       FROM rides WHERE rider_student_id=$1 ORDER BY requested_at DESC LIMIT 10`,
+      [req.vectaUser!.sub],
+    );
+    res.json({ rides: r.rows });
+  } catch (err) {
+    logger.error({ err }, 'rides/mine failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/rides/nearby-drivers', async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat(String(req.query.lat ?? ''));
+    const lng = parseFloat(String(req.query.lng ?? ''));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      res.status(400).json({ error: 'lat and lng required' });
+      return;
+    }
+    const drivers = await query(
+      `
+      SELECT dp.id, dp.vehicle_make, dp.vehicle_model, dp.vehicle_color,
+             dp.rating, dl.lat, dl.lng, dl.heading,
+             ST_Distance(
+               dl.location,
+               ST_SetSRID(ST_MakePoint($2::double precision, $1::double precision), 4326)::geography
+             ) AS distance_meters
+      FROM driver_profiles dp
+      JOIN driver_locations dl ON dl.driver_id = dp.id
+      WHERE dl.is_online=TRUE AND dp.status='APPROVED'
+        AND ST_DWithin(
+          dl.location,
+          ST_SetSRID(ST_MakePoint($2::double precision, $1::double precision), 4326)::geography,
+          8047
+        )
+      ORDER BY distance_meters ASC NULLS LAST
+      LIMIT 10
+    `,
+      [lat, lng],
+    );
+    res.json({ drivers: drivers.rows });
+  } catch (err) {
+    logger.error({ err }, 'nearby-drivers failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/rides/:rideId', async (req: Request, res: Response) => {
+  try {
+    const ride = await queryOne(
+      `SELECT r.*,
+              dp.vehicle_make, dp.vehicle_model, dp.vehicle_color,
+              dp.vehicle_plate, dp.rating AS driver_profile_rating,
+              dl.lat AS driver_lat, dl.lng AS driver_lng,
+              s.legal_name AS driver_name
+       FROM rides r
+       LEFT JOIN driver_profiles dp ON dp.id = r.driver_id
+       LEFT JOIN driver_locations dl ON dl.driver_id = r.driver_id
+       LEFT JOIN students s ON s.id = dp.student_id
+       WHERE r.id=$1 AND r.rider_student_id=$2`,
+      [req.params.rideId, req.vectaUser!.sub],
+    );
+    if (!ride) {
+      res.status(404).json({ error: 'RIDE_NOT_FOUND' });
+      return;
+    }
+    res.json(ride);
+  } catch (err) {
+    logger.error({ err }, 'ride get failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.post('/rides/:rideId/cancel', async (req: Request, res: Response) => {
+  try {
+    const reason =
+      typeof req.body?.reason === 'string'
+        ? stripFreeText(req.body.reason).slice(0, 500)
+        : 'Cancelled by rider';
+    await query(
+      `UPDATE rides SET status='CANCELLED', cancelled_at=NOW(), cancel_reason=$1
+       WHERE id=$2 AND rider_student_id=$3 AND status IN ('REQUESTED','MATCHED')`,
+      [reason, req.params.rideId, req.vectaUser!.sub],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, 'ride cancel failed');
+    res.status(500).json({ error: 'CANCEL_FAILED' });
+  }
+});
+
+router.post('/rides/:rideId/rate', async (req: Request, res: Response) => {
+  try {
+    const { rating, review } = z
+      .object({
+        rating: z.number().int().min(1).max(5),
+        review: z.string().max(2000).transform((v) => stripFreeText(v)).optional(),
+      })
+      .parse(req.body);
+    await query(
+      `UPDATE rides SET rider_rating=$1, rider_review=$2 WHERE id=$3 AND rider_student_id=$4`,
+      [rating, review ?? null, req.params.rideId, req.vectaUser!.sub],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, 'ride rate failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(500).json({ error: 'RATE_FAILED' });
+  }
+});
+
+router.post('/driver/apply', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        workAuthType: z.string(),
+        workAuthDocUrl: z.string().url(),
+        workAuthExpiry: z.string(),
+        licenseNumberEnc: z.string().min(1).max(500),
+        licenseState: z.string().min(2).max(8).transform((v) => stripFreeText(v)),
+        licenseExpiry: z.string(),
+        licenseDocUrl: z.string().url(),
+        insuranceDocUrl: z.string().url(),
+        insuranceExpiry: z.string(),
+        vehicleMake: z.string().min(1).max(50).transform((v) => stripFreeText(v)),
+        vehicleModel: z.string().min(1).max(50).transform((v) => stripFreeText(v)),
+        vehicleYear: z.number().int().min(1990).max(new Date().getFullYear() + 1),
+        vehicleColor: z.string().min(1).max(40).transform((v) => stripFreeText(v)),
+        vehiclePlate: z.string().min(1).max(20).transform((v) => stripFreeText(v)),
+        vehicleCapacity: z.number().int().min(2).max(7),
+      })
+      .parse(req.body);
+
+    const result = await applyAsDriver(req.vectaUser!.sub, {
+      workAuthType: body.workAuthType,
+      workAuthDocUrl: body.workAuthDocUrl,
+      workAuthExpiry: body.workAuthExpiry,
+      licenseNumberEnc: body.licenseNumberEnc,
+      licenseState: body.licenseState,
+      licenseExpiry: body.licenseExpiry,
+      licenseDocUrl: body.licenseDocUrl,
+      insuranceDocUrl: body.insuranceDocUrl,
+      insuranceExpiry: body.insuranceExpiry,
+      vehicleMake: body.vehicleMake,
+      vehicleModel: body.vehicleModel,
+      vehicleYear: body.vehicleYear,
+      vehicleColor: body.vehicleColor,
+      vehiclePlate: body.vehiclePlate,
+      vehicleCapacity: body.vehicleCapacity,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof F1ComplianceError) {
+      res.status(403).json({
+        error: 'F1_VISA_COMPLIANCE_VIOLATION',
+        message: err.message,
+      });
+      return;
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/driver/status', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne(
+      `SELECT dp.*, dl.is_online, dl.lat, dl.lng
+       FROM driver_profiles dp
+       LEFT JOIN driver_locations dl ON dl.driver_id = dp.id
+       WHERE dp.student_id=$1`,
+      [req.vectaUser!.sub],
+    );
+    if (!driver) {
+      res.json({ hasProfile: false });
+      return;
+    }
+    res.json({ hasProfile: true, ...driver });
+  } catch (err) {
+    logger.error({ err }, 'driver status failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.post('/driver/online', async (req: Request, res: Response) => {
+  try {
+    const { lat, lng } = z.object({ lat: z.number(), lng: z.number() }).parse(req.body);
+    const driver = await queryOne<{ id: string }>(
+      'SELECT id FROM driver_profiles WHERE student_id=$1 AND status=$2',
+      [req.vectaUser!.sub, 'APPROVED'],
+    );
+    if (!driver) {
+      res.status(403).json({ error: 'DRIVER_NOT_APPROVED' });
+      return;
+    }
+    await goOnline(driver.id, lat, lng);
+    res.json({ online: true });
+  } catch (err) {
+    logger.error({ err }, 'driver online failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/driver/offline', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+      return;
+    }
+    await goOffline(driver.id);
+    res.json({ online: false });
+  } catch (err) {
+    logger.error({ err }, 'driver offline failed');
+    res.status(500).json({ error: 'OFFLINE_FAILED' });
+  }
+});
+
+router.patch('/driver/location', async (req: Request, res: Response) => {
+  try {
+    const { lat, lng, heading } = z
+      .object({ lat: z.number(), lng: z.number(), heading: z.number().optional() })
+      .parse(req.body);
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await query(`UPDATE driver_locations SET lat=$1, lng=$2, heading=$3 WHERE driver_id=$4`, [
+      lat,
+      lng,
+      heading ?? null,
+      driver.id,
+    ]);
+    res.json({ updated: true });
+  } catch (err) {
+    logger.error({ err }, 'driver location failed');
+    res.status(400).json({ error: 'UPDATE_FAILED' });
+  }
+});
+
+router.post('/driver/accept/:rideId', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>(
+      'SELECT id FROM driver_profiles WHERE student_id=$1 AND status=$2',
+      [req.vectaUser!.sub, 'APPROVED'],
+    );
+    if (!driver) {
+      res.status(403).json({ error: 'NOT_APPROVED' });
+      return;
+    }
+    await acceptRide(driver.id, req.params.rideId);
+    res.json({ accepted: true });
+  } catch (err) {
+    logger.error({ err }, 'driver accept failed');
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/driver/start/:rideId', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await startRide(driver.id, req.params.rideId);
+    res.json({ started: true });
+  } catch (err) {
+    logger.error({ err }, 'driver start failed');
+    res.status(500).json({ error: 'START_FAILED' });
+  }
+});
+
+router.post('/driver/complete/:rideId', async (req: Request, res: Response) => {
+  try {
+    const { actualMiles } = z.object({ actualMiles: z.number().positive() }).parse(req.body);
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await completeRide(driver.id, req.params.rideId, actualMiles);
+    res.json({ completed: true });
+  } catch (err) {
+    logger.error({ err }, 'driver complete failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/driver/earnings', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.json({
+        total_earnings_cents: 0,
+        total_rides: 0,
+        avg_miles: 0,
+        total_miles: 0,
+      });
+      return;
+    }
+
+    const earnings = await queryOne<{
+      total_earnings_cents: number;
+      total_rides: number;
+      avg_miles: string;
+      total_miles: string;
+    }>(
+      `
+      SELECT
+        COALESCE(SUM(driver_payout_cents),0)::int AS total_earnings_cents,
+        COUNT(*)::int AS total_rides,
+        COALESCE(AVG(actual_miles),0)::numeric(6,2)::text AS avg_miles,
+        COALESCE(SUM(actual_miles),0)::numeric(8,2)::text AS total_miles
+      FROM rides
+      WHERE driver_id=$1 AND status='COMPLETED'
+        AND EXTRACT(YEAR FROM dropoff_at) = EXTRACT(YEAR FROM NOW())
+    `,
+      [driver.id],
+    );
+
+    res.json(
+      earnings ?? {
+        total_earnings_cents: 0,
+        total_rides: 0,
+        avg_miles: '0',
+        total_miles: '0',
+      },
+    );
+  } catch (err) {
+    logger.error({ err }, 'driver earnings failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/driver/rides/history', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.json({ rides: [] });
+      return;
+    }
+    const r = await query(
+      `SELECT id, pickup_address, dropoff_address, actual_miles, driver_payout_cents, dropoff_at, status
+       FROM rides WHERE driver_id=$1 ORDER BY requested_at DESC LIMIT 50`,
+      [driver.id],
+    );
+    res.json({ rides: r.rows });
+  } catch (err) {
+    logger.error({ err }, 'driver history failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/driver/rides/:rideId', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    const ride = await queryOne(
+      `SELECT r.*, s.legal_name AS rider_name
+       FROM rides r
+       JOIN students s ON s.id = r.rider_student_id
+       WHERE r.id=$1 AND r.driver_id=$2`,
+      [req.params.rideId, driver.id],
+    );
+    if (!ride) {
+      res.status(404).json({ error: 'RIDE_NOT_FOUND' });
+      return;
+    }
+    res.json(ride);
+  } catch (err) {
+    logger.error({ err }, 'driver ride get failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
   }
 });
 

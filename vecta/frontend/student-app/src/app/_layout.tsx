@@ -145,6 +145,9 @@ export default function RootLayout() {
         <Stack.Screen name="housing/roommate"           options={{ headerShown: false }} />
         <Stack.Screen name="insurance/index"            options={{ headerShown: false }} />
         <Stack.Screen name="mobility/enroll"            options={{ headerShown: false }} />
+        <Stack.Screen name="mobility/book-ride"         options={{ headerShown: false }} />
+        <Stack.Screen name="mobility/ride-tracking"      options={{ headerShown: false }} />
+        <Stack.Screen name="mobility/ride-complete"     options={{ headerShown: false }} />
         <Stack.Screen name="mobility/audit-export"      options={{ headerShown: false }} />
         <Stack.Screen name="profile/tokens"             options={{ headerShown: false }} />
         <Stack.Screen name="profile/vecta-id"           options={{ headerShown: false }} />

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Vecta Driver",
+    "slug": "vecta-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#001F3F"
+    },
+    "ios": {
+      "bundleIdentifier": "io.vecta.driver",
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Vecta Driver needs your location to match you with riders.",
+        "NSLocationWhenInUseUsageDescription": "Vecta Driver needs your location to match you with riders.",
+        "NSCameraUsageDescription": "Used to upload driver documents."
+      }
+    },
+    "android": {
+      "package": "io.vecta.driver",
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Vecta Driver to use your location."
+        }
+      ]
+    ],
+    "scheme": "vecta-driver",
+    "extra": {
+      "router": { "origin": false }
+    }
+  }
+}

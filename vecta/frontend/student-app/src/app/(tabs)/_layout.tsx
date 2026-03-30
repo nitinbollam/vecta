@@ -23,6 +23,7 @@ const TABS: Array<{
   { name: 'index',     title: 'Home',      icon: 'home-outline',              activeIcon: 'home'                },
   { name: 'banking',   title: 'Banking',   icon: 'card-outline',              activeIcon: 'card'                },
   { name: 'housing',   title: 'Housing',   icon: 'business-outline',          activeIcon: 'business'            },
+  { name: 'rides',     title: 'Rides',     icon: 'car-outline',               activeIcon: 'car'                 },
   { name: 'insurance', title: 'Insurance', icon: 'shield-checkmark-outline',  activeIcon: 'shield-checkmark'    },
   { name: 'mobility',  title: 'Fleet',     icon: 'car-outline',               activeIcon: 'car-sport'           },
   { name: 'profile',   title: 'Profile',   icon: 'person-outline',            activeIcon: 'person'              },
