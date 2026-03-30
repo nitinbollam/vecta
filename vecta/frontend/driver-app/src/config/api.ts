@@ -10,14 +10,22 @@ export const API_V1_BASE = stripTrailingSlash(
 
 export function getWsBase(): string {
   const fromEnv = process.env.EXPO_PUBLIC_WS_URL?.trim();
-  if (fromEnv) return stripTrailingSlash(fromEnv);
-  try {
-    const u = new URL(/^https?:\/\//i.test(API_V1_BASE) ? API_V1_BASE : `http://${API_V1_BASE}`);
-    const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    return stripTrailingSlash(`${proto}//${u.host}`);
-  } catch {
-    return 'wss://vecta-elaf.onrender.com';
+  let url: string;
+  if (fromEnv) {
+    url = stripTrailingSlash(fromEnv);
+  } else {
+    try {
+      const u = new URL(/^https?:\/\//i.test(API_V1_BASE) ? API_V1_BASE : `http://${API_V1_BASE}`);
+      const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      url = stripTrailingSlash(`${proto}//${u.host}`);
+    } catch {
+      url = 'ws://localhost:4000';
+    }
   }
+  if (process.env.NODE_ENV === 'production' && url.startsWith('ws://')) {
+    return url.replace('ws://', 'wss://');
+  }
+  return url;
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {

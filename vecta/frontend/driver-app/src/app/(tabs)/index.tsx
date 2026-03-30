@@ -1,10 +1,32 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  Alert,
+  Platform,
+  Linking,
+} from 'react-native';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import MapboxMap from '../../components/MapboxMap';
 import { API_V1_BASE, getAuthHeaders, getWsBase } from '../../config/api';
 import { useDriverStore } from '../../stores/driver-store';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 type IncomingRide = {
   type?: string;
@@ -25,34 +47,175 @@ export default function DriverHome() {
   const [incoming, setIncoming] = useState<IncomingRide | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(30);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const locationSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const goOnline = useCallback(async () => {
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') return;
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+      const token = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined,
+      );
+      const headers = await getAuthHeaders();
+      await fetch(`${API_V1_BASE}/mobility/driver/push-token`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ token: token.data }),
+      }).catch(() => undefined);
+    })();
+  }, []);
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data as {
+        type?: string;
+        ride?: {
+          id: string;
+          pickupAddress: string;
+          dropoffAddress: string;
+          estimatedMiles: number;
+          fareCents: number;
+          driverPayout: number;
+        };
+      };
+      if (data?.type === 'RIDE_REQUEST' && data.ride) {
+        const r = data.ride;
+        setIncoming({
+          type: 'RIDE_REQUEST',
+          rideId: r.id,
+          pickupAddress: r.pickupAddress,
+          dropoffAddress: r.dropoffAddress,
+          estimatedMiles: r.estimatedMiles,
+          fare: {
+            estimatedFareCents: r.fareCents,
+            driverPayoutCents: r.driverPayout,
+          },
+        });
+        setSecondsLeft(30);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  const startLocationTracking = useCallback(async () => {
+    if (locationSubscriptionRef.current) {
+      locationSubscriptionRef.current.remove();
+      locationSubscriptionRef.current = null;
+    }
+    const subscription = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 5000,
+        distanceInterval: 10,
+      },
+      async (loc) => {
+        const { latitude: lat, longitude: lng, heading } = loc.coords;
+        setCurrentLocation({ lat, lng });
+        try {
+          const headers = await getAuthHeaders();
+          await fetch(`${API_V1_BASE}/mobility/driver/location`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ lat, lng, heading: heading ?? 0 }),
+          });
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: 'DRIVER_LOCATION_UPDATE',
+                lat,
+                lng,
+                heading: heading ?? 0,
+              }),
+            );
+          }
+        } catch {
+          /* ignore */
+        }
+      },
+    );
+    locationSubscriptionRef.current = subscription;
+  }, []);
+
+  const proceedOnline = useCallback(async () => {
+    if (!driverId) return;
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_V1_BASE}/mobility/driver/online`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+      }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { message?: string };
+      Alert.alert('Error', data.message ?? 'Could not go online. Check your account status.');
+      return;
+    }
+    setOnline(true);
+    setCurrentLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+    await refreshDriver();
+    await startLocationTracking();
+  }, [driverId, refreshDriver, startLocationTracking]);
+
+  const handleGoOnline = useCallback(async () => {
     if (!driverId) return;
     setBusy(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_V1_BASE}/mobility/driver/online`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      });
-      if (res.ok) {
-        setOnline(true);
-        await refreshDriver();
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (fgStatus !== 'granted') {
+        Alert.alert(
+          'Location Required',
+          'Vecta Driver needs your location to match you with riders. Please enable location access.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+          ],
+        );
+        return;
       }
+
+      if (Platform.OS === 'android') {
+        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+        if (bgStatus !== 'granted') {
+          Alert.alert(
+            'Background Location Required',
+            'To receive ride requests while the app is in the background, please select "Allow all the time" in your location settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+            ],
+          );
+          Alert.alert(
+            'Limited Mode',
+            'You can still receive rides but must keep the app open. For full background support, enable "Allow all the time" in settings.',
+            [{ text: 'Continue Anyway', onPress: () => void proceedOnline() }],
+          );
+          return;
+        }
+      }
+
+      await proceedOnline();
+    } catch {
+      Alert.alert('Error', 'Could not enable location. Please try again.');
     } finally {
       setBusy(false);
     }
-  }, [driverId, refreshDriver]);
+  }, [driverId, proceedOnline]);
 
   const goOffline = useCallback(async () => {
     if (!driverId) return;
     setBusy(true);
     try {
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
       const headers = await getAuthHeaders();
       await fetch(`${API_V1_BASE}/mobility/driver/offline`, { method: 'POST', headers });
       setOnline(false);
@@ -70,8 +233,8 @@ export default function DriverHome() {
       wsRef.current = null;
       return;
     }
-    const base = getWsBase().replace(/\/$/, '');
-    const ws = new WebSocket(`${base}/ws/driver?driverId=${driverId}`);
+    const wsUrl = `${getWsBase().replace(/\/$/, '')}/ws/driver?driverId=${driverId}`;
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     ws.onmessage = (ev) => {
       try {
@@ -118,42 +281,14 @@ export default function DriverHome() {
         setCurrentLocation(null);
       }
     })();
-    const locIv = setInterval(() => {
-      void (async () => {
-        try {
-          const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          setCurrentLocation({ lat: p.coords.latitude, lng: p.coords.longitude });
-        } catch {
-          /* ignore */
-        }
-      })();
-    }, 10000);
-    return () => clearInterval(locIv);
   }, [online]);
 
   useEffect(() => {
-    if (!online || !driverId) return;
-    const tick = async () => {
-      try {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const headers = await getAuthHeaders();
-        await fetch(`${API_V1_BASE}/mobility/driver/location`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            heading: pos.coords.heading ?? undefined,
-          }),
-        });
-      } catch {
-        /* ignore */
-      }
+    return () => {
+      locationSubscriptionRef.current?.remove();
+      wsRef.current?.close();
     };
-    void tick();
-    const id = setInterval(() => void tick(), 5000);
-    return () => clearInterval(id);
-  }, [online, driverId]);
+  }, []);
 
   const acceptRide = useCallback(async () => {
     if (!incoming?.rideId) return;
@@ -204,7 +339,7 @@ export default function DriverHome() {
       <Text style={styles.headline}>{online ? 'Waiting for ride requests…' : 'You are offline'}</Text>
 
       {!online ? (
-        <TouchableOpacity style={styles.goBtn} onPress={() => void goOnline()} disabled={busy}>
+        <TouchableOpacity style={styles.goBtn} onPress={() => void handleGoOnline()} disabled={busy}>
           {busy ? <ActivityIndicator color="#001F3F" /> : <Text style={styles.goBtnText}>GO ONLINE</Text>}
         </TouchableOpacity>
       ) : (

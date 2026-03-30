@@ -546,6 +546,33 @@ router.post('/driver/offline', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/driver/push-token', async (req: Request, res: Response) => {
+  try {
+    const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await query(
+      `INSERT INTO driver_push_tokens (driver_id, expo_token)
+       VALUES ($1, $2)
+       ON CONFLICT (driver_id) DO UPDATE SET expo_token=$2, updated_at=NOW()`,
+      [driver.id, token],
+    );
+    res.json({ registered: true });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, 'driver push-token failed');
+    res.status(500).json({ error: 'PUSH_TOKEN_FAILED' });
+  }
+});
+
 router.patch('/driver/location', async (req: Request, res: Response) => {
   try {
     const { lat, lng, heading } = z

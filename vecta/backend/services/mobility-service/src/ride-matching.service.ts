@@ -144,6 +144,39 @@ export async function requestRide(params: {
       rideId,
       JSON.stringify({ driverId: driver.id, distanceMeters: driver.distance_meters }),
     ]);
+
+    try {
+      const pushRow = await queryOne<{ expo_token: string }>(
+        `SELECT expo_token FROM driver_push_tokens WHERE driver_id=$1`,
+        [driver.id as string],
+      );
+      if (pushRow?.expo_token) {
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: pushRow.expo_token,
+            title: '🚗 New Ride Request',
+            body: `Pickup: ${params.pickupAddress}`,
+            data: {
+              type: 'RIDE_REQUEST',
+              ride: {
+                id: rideId,
+                pickupAddress: params.pickupAddress,
+                dropoffAddress: params.dropoffAddress,
+                estimatedMiles: params.estimatedMiles,
+                fareCents: fare.estimatedFareCents,
+                driverPayout: fare.driverPayoutCents,
+              },
+            },
+            sound: 'default',
+            priority: 'high',
+          }),
+        });
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Push notification failed');
+    }
   }
 
   logger.info({ rideId, matched: Boolean(driver) }, 'ride requested');
@@ -260,25 +293,61 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
       [actualMiles, actualFareCents, platformFee, driverPayout, rideId],
     );
 
+    const driverStudent = await client.query<{ student_id: string }>(
+      `SELECT dp.student_id FROM driver_profiles dp WHERE dp.id = $1`,
+      [driverId],
+    );
+    const driverStudentId = driverStudent.rows[0]?.student_id;
+    if (!driverStudentId) {
+      throw new Error('DRIVER_STUDENT_NOT_FOUND');
+    }
+
+    const driverAccount = await client.query<{ id: string; balance: string }>(
+      `SELECT la.id,
+              (SELECT COALESCE(MAX(balance_after_cents), 0)
+               FROM ledger_entries WHERE account_id = la.id)::text AS balance
+       FROM ledger_accounts la WHERE la.student_id = $1`,
+      [driverStudentId],
+    );
+
+    let driverAccountId: string;
+    let driverCurrentBalance: number;
+
+    if (!driverAccount.rows[0]) {
+      const newDriverAccount = await client.query<{ id: string }>(
+        `INSERT INTO ledger_accounts
+           (student_id, account_number, routing_number, account_type, status, currency)
+         VALUES ($1, 'V' || replace(gen_random_uuid()::text, '-', ''), '021000021', 'CHECKING', 'ACTIVE', 'USD')
+         RETURNING id`,
+        [driverStudentId],
+      );
+      driverAccountId = newDriverAccount.rows[0]!.id;
+      driverCurrentBalance = 0;
+    } else {
+      driverAccountId = driverAccount.rows[0]!.id;
+      driverCurrentBalance = Number.parseInt(driverAccount.rows[0]!.balance, 10);
+      if (!Number.isFinite(driverCurrentBalance)) driverCurrentBalance = 0;
+    }
+
     await client.query(
-      `
-      INSERT INTO ledger_entries (
+      `INSERT INTO ledger_entries (
         transaction_id, account_id, entry_type,
         amount_cents, balance_after_cents, description, status
-      )
-      SELECT
+      ) VALUES (
         gen_random_uuid(),
-        la.id,
+        $1,
         'CREDIT',
-        $1::bigint,
-        (SELECT COALESCE(MAX(balance_after_cents),0) FROM ledger_entries WHERE account_id=la.id) + $1::bigint,
-        $2,
+        $2::bigint,
+        $3::bigint,
+        $4,
         'POSTED'
-      FROM ledger_accounts la
-      JOIN driver_profiles dp ON dp.student_id = la.student_id
-      WHERE dp.id = $3
-    `,
-      [driverPayout, `Ride earnings — ${actualMiles.toFixed(1)} miles`, driverId],
+      )`,
+      [
+        driverAccountId,
+        driverPayout,
+        driverCurrentBalance + driverPayout,
+        `Ride earnings — ${actualMiles.toFixed(1)} miles`,
+      ],
     );
 
     await client.query(

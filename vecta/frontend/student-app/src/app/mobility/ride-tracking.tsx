@@ -65,10 +65,9 @@ export default function RideTrackingScreen() {
 
   useEffect(() => {
     if (!rideId) return;
-    const base = getWsBase().replace(/\/$/, '');
-    const url = `${base}/ws/ride/${rideId}?role=rider`;
+    const wsUrl = `${getWsBase().replace(/\/$/, '')}/ws/ride/${rideId}?role=rider`;
     try {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onmessage = (ev) => {
         try {

@@ -12,15 +12,23 @@ export const API_V1_BASE = stripTrailingSlash(
 /** WebSocket origin (no path). Ride channel: `${getWsBase()}/ws/ride/:rideId?role=rider` */
 export function getWsBase(): string {
   const fromEnv = process.env.EXPO_PUBLIC_WS_URL?.trim();
-  if (fromEnv) return stripTrailingSlash(fromEnv);
-  const api = API_V1_BASE;
-  try {
-    const u = new URL(/^https?:\/\//i.test(api) ? api : `http://${api}`);
-    const proto = u.protocol === "https:" ? "wss:" : "ws:";
-    return stripTrailingSlash(`${proto}//${u.host}`);
-  } catch {
-    return "ws://localhost:4000";
+  let url: string;
+  if (fromEnv) {
+    url = stripTrailingSlash(fromEnv);
+  } else {
+    const api = API_V1_BASE;
+    try {
+      const u = new URL(/^https?:\/\//i.test(api) ? api : `http://${api}`);
+      const proto = u.protocol === "https:" ? "wss:" : "ws:";
+      url = stripTrailingSlash(`${proto}//${u.host}`);
+    } catch {
+      url = "ws://localhost:4000";
+    }
   }
+  if (process.env.NODE_ENV === "production" && url.startsWith("ws://")) {
+    return url.replace("ws://", "wss://");
+  }
+  return url;
 }
 
 export const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? "";

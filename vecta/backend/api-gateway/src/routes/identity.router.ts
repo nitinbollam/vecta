@@ -13,6 +13,7 @@
  * GET  /api/v1/identity/token/verify         — Verify Vecta ID token (landlord)
  * POST /api/v1/identity/banking/provision    — Provision ledger DDA
  * GET  /api/v1/identity/banking/balance      — Get masked balance
+ * POST /api/v1/identity/upload-url           — Presigned S3 URL for driver document upload
  * (Didit / Unit webhooks — see identity-webhooks.router.ts)
  */
 
@@ -43,6 +44,51 @@ router.get('/onboarding/state', authMiddleware, async (req: Request, res: Respon
   } catch (err) {
     logger.error({ err }, 'onboarding state failed');
     res.status(500).json(freshError('NETWORK_ERROR'));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Presigned S3 upload for driver documents
+// POST /api/v1/identity/upload-url
+// ---------------------------------------------------------------------------
+
+router.post('/upload-url', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { fileName, documentType, contentType } = z
+      .object({
+        fileName:     z.string().min(1).max(255),
+        documentType: z.string().min(1).max(64),
+        contentType:  z.string().min(1).max(128).optional(),
+      })
+      .parse(req.body);
+
+    const studentId = req.vectaUser!.sub;
+    const key = `driver-docs/${studentId}/${documentType}/${Date.now()}-${fileName}`;
+
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+
+    const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
+    const bucket = process.env.S3_BUCKET_NAME ?? 'vecta-documents';
+    const ct = contentType ?? 'application/pdf';
+
+    const command = new PutObjectCommand({
+      Bucket:      bucket,
+      Key:         key,
+      ContentType: ct,
+    });
+
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    const documentUrl = `https://${bucket}.s3.amazonaws.com/${key}`;
+
+    res.json({ uploadUrl, documentUrl, key });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    logger.error({ err }, 'Failed to generate upload URL');
+    res.status(500).json({ error: 'UPLOAD_URL_FAILED' });
   }
 });
 

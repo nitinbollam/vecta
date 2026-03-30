@@ -100,8 +100,8 @@ export default function RideActiveScreen() {
 
   useEffect(() => {
     if (!rideId || !driverId) return;
-    const base = getWsBase().replace(/\/$/, '');
-    const ws = new WebSocket(`${base}/ws/ride/${rideId}?role=driver&driverId=${driverId}`);
+    const wsUrl = `${getWsBase().replace(/\/$/, '')}/ws/ride/${rideId}?role=driver&driverId=${driverId}`;
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     const iv = setInterval(async () => {
       if (ws.readyState !== WebSocket.OPEN) return;

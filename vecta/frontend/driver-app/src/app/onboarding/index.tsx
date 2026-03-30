@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -15,8 +16,37 @@ import { useDriverStore } from '../../stores/driver-store';
 
 const WORK_TYPES = ['OPT', 'CPT', 'EAD', 'US_CITIZEN', 'PERMANENT_RESIDENT'] as const;
 
-function pendingDocUrl(label: string): string {
-  return `https://docs.vecta.io/pending/${encodeURIComponent(label)}`;
+async function uploadDocument(
+  fileUri: string,
+  fileName: string,
+  documentType: string,
+  contentType: string,
+): Promise<string> {
+  const headers = await getAuthHeaders();
+  const presignRes = await fetch(`${API_V1_BASE}/identity/upload-url`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      fileName,
+      documentType,
+      contentType,
+    }),
+  });
+  if (!presignRes.ok) {
+    throw new Error('Could not get upload URL');
+  }
+  const { uploadUrl, documentUrl } = (await presignRes.json()) as {
+    uploadUrl: string;
+    documentUrl: string;
+  };
+  const fileContent = await fetch(fileUri);
+  const blob = await fileContent.blob();
+  await fetch(uploadUrl, {
+    method: 'PUT',
+    body: blob,
+    headers: { 'Content-Type': contentType },
+  });
+  return documentUrl;
 }
 
 export default function DriverOnboarding() {
@@ -36,16 +66,41 @@ export default function DriverOnboarding() {
   const [vehicleCapacity, setVehicleCapacity] = useState('4');
   const [insuranceExpiry, setInsuranceExpiry] = useState('');
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState('');
+  const [workAuthDocUrl, setWorkAuthDocUrl] = useState('');
+  const [licenseDocUrl, setLicenseDocUrl] = useState('');
+  const [insuranceDocUrl, setInsuranceDocUrl] = useState('');
 
-  const pickLabel = useCallback(async (label: string): Promise<string> => {
-    const r = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-    if (r.canceled || !r.assets?.[0]) return pendingDocUrl(`${label}-missing`);
-    return pendingDocUrl(`${label}-${r.assets[0].name}`);
-  }, []);
+  const handlePickDocument = useCallback(
+    async (docType: string, setter: (url: string) => void, label: string) => {
+      try {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['application/pdf', 'image/*'],
+          copyToCacheDirectory: true,
+        });
+        if (result.canceled || !result.assets?.[0]) return;
+        const file = result.assets[0];
+        setUploading(true);
+        const contentType = file.mimeType ?? 'application/pdf';
+        const url = await uploadDocument(file.uri, file.name ?? 'document', docType, contentType);
+        setter(url);
+        Alert.alert('Uploaded', `${label} uploaded successfully.`);
+      } catch {
+        Alert.alert('Upload Failed', 'Could not upload document. Please try again.');
+      } finally {
+        setUploading(false);
+      }
+    },
+    [],
+  );
 
   const submit = useCallback(async () => {
     setErr('');
+    if (!workAuthDocUrl || !licenseDocUrl || !insuranceDocUrl) {
+      setErr('Please upload work authorization, license, and insurance documents.');
+      return;
+    }
     setLoading(true);
     try {
       const headers = await getAuthHeaders();
@@ -54,13 +109,13 @@ export default function DriverOnboarding() {
         headers,
         body: JSON.stringify({
           workAuthType,
-          workAuthDocUrl: pendingDocUrl('work-auth'),
+          workAuthDocUrl,
           workAuthExpiry,
           licenseNumberEnc,
           licenseState,
           licenseExpiry,
-          licenseDocUrl: pendingDocUrl('license'),
-          insuranceDocUrl: pendingDocUrl('insurance'),
+          licenseDocUrl,
+          insuranceDocUrl,
           insuranceExpiry,
           vehicleMake,
           vehicleModel,
@@ -81,17 +136,20 @@ export default function DriverOnboarding() {
     }
   }, [
     workAuthType,
+    workAuthDocUrl,
     workAuthExpiry,
     licenseNumberEnc,
     licenseState,
     licenseExpiry,
+    licenseDocUrl,
+    insuranceDocUrl,
+    insuranceExpiry,
     vehicleMake,
     vehicleModel,
     vehicleYear,
     vehicleColor,
     vehiclePlate,
     vehicleCapacity,
-    insuranceExpiry,
     refreshDriver,
   ]);
 
@@ -112,6 +170,12 @@ export default function DriverOnboarding() {
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} style={{ backgroundColor: '#001F3F' }}>
+      {uploading ? (
+        <View style={styles.uploadOverlay}>
+          <ActivityIndicator size="large" color="#00E6CC" />
+          <Text style={styles.uploadText}>Uploading…</Text>
+        </View>
+      ) : null}
       <Text style={styles.title}>Driver application</Text>
       {step === 0 && (
         <View>
@@ -125,9 +189,21 @@ export default function DriverOnboarding() {
             <Text style={{ color: '#FCA5A5' }}>I am on F-1 without OPT/CPT/EAD</Text>
           </TouchableOpacity>
           <Text style={styles.label}>Work auth expiry (YYYY-MM-DD)</Text>
-          <TextInput style={styles.input} value={workAuthExpiry} onChangeText={setWorkAuthExpiry} placeholder="2030-01-01" placeholderTextColor="#7A9BAD" />
-          <TouchableOpacity style={styles.nav} onPress={() => void pickLabel('work-auth')}>
-            <Text style={styles.navText}>Attach work auth doc (metadata only for now)</Text>
+          <TextInput
+            style={styles.input}
+            value={workAuthExpiry}
+            onChangeText={setWorkAuthExpiry}
+            placeholder="2030-01-01"
+            placeholderTextColor="#7A9BAD"
+          />
+          <TouchableOpacity
+            style={styles.nav}
+            disabled={uploading}
+            onPress={() => void handlePickDocument('work_auth', setWorkAuthDocUrl, 'Work authorization')}
+          >
+            <Text style={styles.navText}>
+              {workAuthDocUrl ? 'Replace work auth document' : 'Attach work auth document (PDF or image)'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btn} onPress={() => setStep(1)}>
             <Text style={styles.btnText}>Next</Text>
@@ -137,13 +213,37 @@ export default function DriverOnboarding() {
       {step === 1 && (
         <View>
           <Text style={styles.label}>Driver license # (stored encrypted server-side)</Text>
-          <TextInput style={styles.input} value={licenseNumberEnc} onChangeText={setLicenseNumberEnc} placeholder="License number" placeholderTextColor="#7A9BAD" />
+          <TextInput
+            style={styles.input}
+            value={licenseNumberEnc}
+            onChangeText={setLicenseNumberEnc}
+            placeholder="License number"
+            placeholderTextColor="#7A9BAD"
+          />
           <Text style={styles.label}>State</Text>
-          <TextInput style={styles.input} value={licenseState} onChangeText={setLicenseState} placeholder="CA" placeholderTextColor="#7A9BAD" />
+          <TextInput
+            style={styles.input}
+            value={licenseState}
+            onChangeText={setLicenseState}
+            placeholder="CA"
+            placeholderTextColor="#7A9BAD"
+          />
           <Text style={styles.label}>License expiry</Text>
-          <TextInput style={styles.input} value={licenseExpiry} onChangeText={setLicenseExpiry} placeholder="2028-01-01" placeholderTextColor="#7A9BAD" />
-          <TouchableOpacity style={styles.nav} onPress={() => void pickLabel('license')}>
-            <Text style={styles.navText}>Attach license image</Text>
+          <TextInput
+            style={styles.input}
+            value={licenseExpiry}
+            onChangeText={setLicenseExpiry}
+            placeholder="2028-01-01"
+            placeholderTextColor="#7A9BAD"
+          />
+          <TouchableOpacity
+            style={styles.nav}
+            disabled={uploading}
+            onPress={() => void handlePickDocument('license', setLicenseDocUrl, 'License')}
+          >
+            <Text style={styles.navText}>
+              {licenseDocUrl ? 'Replace license document' : 'Attach license (PDF or image)'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btn} onPress={() => setStep(2)}>
             <Text style={styles.btnText}>Next</Text>
@@ -155,14 +255,40 @@ export default function DriverOnboarding() {
           <Text style={styles.label}>Vehicle</Text>
           <TextInput style={styles.input} value={vehicleMake} onChangeText={setVehicleMake} placeholder="Make" placeholderTextColor="#7A9BAD" />
           <TextInput style={styles.input} value={vehicleModel} onChangeText={setVehicleModel} placeholder="Model" placeholderTextColor="#7A9BAD" />
-          <TextInput style={styles.input} value={vehicleYear} onChangeText={setVehicleYear} placeholder="Year" placeholderTextColor="#7A9BAD" keyboardType="number-pad" />
+          <TextInput
+            style={styles.input}
+            value={vehicleYear}
+            onChangeText={setVehicleYear}
+            placeholder="Year"
+            placeholderTextColor="#7A9BAD"
+            keyboardType="number-pad"
+          />
           <TextInput style={styles.input} value={vehicleColor} onChangeText={setVehicleColor} placeholder="Color" placeholderTextColor="#7A9BAD" />
           <TextInput style={styles.input} value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Plate" placeholderTextColor="#7A9BAD" />
-          <TextInput style={styles.input} value={vehicleCapacity} onChangeText={setVehicleCapacity} placeholder="Capacity 2-7" placeholderTextColor="#7A9BAD" keyboardType="number-pad" />
+          <TextInput
+            style={styles.input}
+            value={vehicleCapacity}
+            onChangeText={setVehicleCapacity}
+            placeholder="Capacity 2-7"
+            placeholderTextColor="#7A9BAD"
+            keyboardType="number-pad"
+          />
           <Text style={styles.label}>Insurance expiry</Text>
-          <TextInput style={styles.input} value={insuranceExpiry} onChangeText={setInsuranceExpiry} placeholder="2026-01-01" placeholderTextColor="#7A9BAD" />
-          <TouchableOpacity style={styles.nav} onPress={() => void pickLabel('insurance')}>
-            <Text style={styles.navText}>Attach insurance</Text>
+          <TextInput
+            style={styles.input}
+            value={insuranceExpiry}
+            onChangeText={setInsuranceExpiry}
+            placeholder="2026-01-01"
+            placeholderTextColor="#7A9BAD"
+          />
+          <TouchableOpacity
+            style={styles.nav}
+            disabled={uploading}
+            onPress={() => void handlePickDocument('insurance', setInsuranceDocUrl, 'Insurance')}
+          >
+            <Text style={styles.navText}>
+              {insuranceDocUrl ? 'Replace insurance document' : 'Attach insurance (PDF or image)'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btn} onPress={() => setStep(3)}>
             <Text style={styles.btnText}>Review</Text>
@@ -173,7 +299,7 @@ export default function DriverOnboarding() {
         <View>
           <Text style={styles.body}>By submitting, you confirm the information is accurate.</Text>
           {err ? <Text style={{ color: '#FCA5A5', marginVertical: 8 }}>{err}</Text> : null}
-          <TouchableOpacity style={styles.btn} onPress={() => void submit()} disabled={loading}>
+          <TouchableOpacity style={styles.btn} onPress={() => void submit()} disabled={loading || uploading}>
             {loading ? <ActivityIndicator color="#001F3F" /> : <Text style={styles.btnText}>Submit application</Text>}
           </TouchableOpacity>
         </View>
@@ -206,4 +332,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnText: { fontWeight: '800', color: '#001F3F', fontSize: 16 },
+  uploadOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    padding: 24,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,31,63,0.85)',
+  },
+  uploadText: { color: '#9CB4C8', marginTop: 12 },
 });
