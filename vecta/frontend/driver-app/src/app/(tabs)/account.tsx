@@ -1,57 +1,129 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import { API_V1_BASE, getAuthHeaders } from '../../config/api';
+import { DriverColors, DriverSpacing, DriverFonts } from '../../constants/theme';
 import { useDriverStore } from '../../stores/driver-store';
 
 export default function AccountScreen() {
-  const driver = useDriverStore((s) => s.driver);
-  const setAuthToken = useDriverStore((s) => s.setAuthToken);
-  const setDriver = useDriverStore((s) => s.setDriver);
+  const [driver, setDriver] = useState<Record<string, unknown> | null>(null);
 
-  const signOut = async () => {
-    await setAuthToken(null);
-    setDriver(null);
-    router.replace('/auth/login');
-  };
+  useEffect(() => {
+    void fetchProfile();
+  }, []);
+
+  async function fetchProfile() {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_V1_BASE}/mobility/driver/status`, { headers });
+      const data = (await res.json()) as Record<string, unknown>;
+      setDriver(data);
+    } catch {
+      setDriver(null);
+    }
+  }
+
+  async function handleSignOut() {
+    Alert.alert('Sign Out', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await useDriverStore.getState().setAuthToken(null);
+          useDriverStore.getState().setDriver(null);
+          await AsyncStorage.multiRemove(['driver_auth_token', 'driver_student_id', 'driver_id']);
+          router.replace('/auth/login');
+        },
+      },
+    ]);
+  }
+
+  const workAuthExpiry = driver?.work_auth_expiry ? new Date(String(driver.work_auth_expiry)) : null;
+  const daysUntilExpiry = workAuthExpiry
+    ? Math.floor((workAuthExpiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const status = String(driver?.status ?? '');
+  const rating = driver?.rating != null ? String(driver.rating) : '5.0';
+  const totalRides = typeof driver?.total_rides === 'number' ? driver.total_rides : 0;
 
   return (
-    <View style={styles.root}>
-      <Text style={styles.title}>Account</Text>
-      <View style={styles.card}>
-        <Text style={styles.badge}>Status: {String(driver?.status ?? '—')}</Text>
-        <Text style={styles.row}>Vehicle: {[driver?.vehicle_make, driver?.vehicle_model].filter(Boolean).join(' ')}</Text>
-        <Text style={styles.row}>Plate: {String(driver?.vehicle_plate ?? '—')}</Text>
-        <Text style={styles.row}>Rating: ★ {String(driver?.rating ?? '5.0')}</Text>
-      </View>
-      <Text style={styles.warn}>
-        Renew work authorization, license, and insurance before expiry. Updates can be added via support until in-app
-        document refresh ships.
-      </Text>
-      <TouchableOpacity style={styles.out} onPress={() => void signOut()}>
-        <Text style={styles.outText}>Sign out</Text>
-      </TouchableOpacity>
-    </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.header}>Account</Text>
+
+        <View style={styles.statusCard}>
+          <View style={[styles.badge, { backgroundColor: status === 'APPROVED' ? '#00C896' : '#F59E0B' }]}>
+            <Text style={styles.badgeText}>
+              {status === 'APPROVED' ? '✓ APPROVED DRIVER' : '⏳ PENDING REVIEW'}
+            </Text>
+          </View>
+          <Text style={styles.rating}>⭐ {rating} rating</Text>
+          <Text style={styles.rideCount}>{totalRides} total rides</Text>
+        </View>
+
+        {daysUntilExpiry !== null && daysUntilExpiry <= 30 ? (
+          <View style={styles.warningCard}>
+            <Text style={styles.warningText}>
+              ⚠️ Work authorization expires in {daysUntilExpiry} days. Update your documents to continue driving.
+            </Text>
+          </View>
+        ) : null}
+
+        {driver?.vehicle_make ? (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Your Vehicle</Text>
+            <Text style={styles.infoValue}>
+              {String(driver.vehicle_year ?? '')} {String(driver.vehicle_make)} {String(driver.vehicle_model ?? '')}
+            </Text>
+            <Text style={styles.infoSub}>
+              {String(driver.vehicle_color ?? '')} · {String(driver.vehicle_plate ?? '')}
+            </Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity style={styles.linkRow} onPress={() => void Linking.openURL('mailto:drivers@vecta.io')}>
+          <Text style={styles.linkText}>Contact Driver Support →</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.linkRow} onPress={() => void Linking.openURL('https://vecta.io/drivers/faq')}>
+          <Text style={styles.linkText}>Driver FAQ →</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.signOutButton} onPress={() => void handleSignOut()}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#001F3F', paddingTop: 56, paddingHorizontal: 24 },
-  title: { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 20 },
-  card: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 16,
-    padding: 20,
-  },
-  badge: { color: '#00C896', fontWeight: '700', marginBottom: 12 },
-  row: { color: '#E2E8F0', marginBottom: 8 },
-  warn: { color: '#94A3B8', marginTop: 20, lineHeight: 20 },
-  out: {
-    marginTop: 32,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-    paddingVertical: 14,
+  container: { flex: 1, backgroundColor: '#0A0F1E' },
+  scroll: { padding: DriverSpacing['5'] },
+  header: { fontSize: DriverFonts['2xl'], fontWeight: '700', color: '#FFFFFF', marginBottom: DriverSpacing['6'] },
+  statusCard: { backgroundColor: '#0F1628', borderRadius: 16, padding: DriverSpacing['5'], alignItems: 'center', marginBottom: DriverSpacing['4'] },
+  badge: { borderRadius: 20, paddingVertical: 6, paddingHorizontal: 16, marginBottom: DriverSpacing['3'] },
+  badgeText: { color: '#FFFFFF', fontWeight: '700', fontSize: DriverFonts.sm },
+  rating: { fontSize: DriverFonts.xl, color: '#FFFFFF', fontWeight: '700' },
+  rideCount: { fontSize: DriverFonts.sm, color: '#A8B8C8', marginTop: 4 },
+  warningCard: { backgroundColor: '#FEF3C7', borderRadius: 12, padding: DriverSpacing['4'], marginBottom: DriverSpacing['4'] },
+  warningText: { color: '#92400E', fontSize: DriverFonts.sm, lineHeight: 20 },
+  infoCard: { backgroundColor: '#0F1628', borderRadius: 12, padding: DriverSpacing['4'], marginBottom: DriverSpacing['4'] },
+  infoTitle: { fontSize: DriverFonts.sm, color: '#5A7080', marginBottom: 4 },
+  infoValue: { fontSize: DriverFonts.base, color: '#FFFFFF', fontWeight: '600' },
+  infoSub: { fontSize: DriverFonts.sm, color: '#A8B8C8', marginTop: 2 },
+  linkRow: { paddingVertical: DriverSpacing['4'], borderBottomWidth: 1, borderBottomColor: '#1E2D45' },
+  linkText: { fontSize: DriverFonts.base, color: DriverColors.teal },
+  signOutButton: {
+    marginTop: DriverSpacing['8'],
+    backgroundColor: '#1E2D45',
     borderRadius: 12,
+    padding: DriverSpacing['4'],
     alignItems: 'center',
   },
-  outText: { color: '#FCA5A5', fontWeight: '700' },
+  signOutText: { color: '#EF4444', fontWeight: '600', fontSize: DriverFonts.base },
 });

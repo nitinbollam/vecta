@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import { Stack, router, useRootNavigationState } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
@@ -55,6 +56,10 @@ function useMagicLinkHandler() {
       });
 
       if (!res.ok) {
+        Alert.alert(
+          'Link Expired',
+          'This sign-in link has expired or was already used. Please request a new one from the login screen.',
+        );
         router.replace('/auth/login');
         return;
       }
@@ -66,6 +71,7 @@ function useMagicLinkHandler() {
       await fetchProfile();
       await replaceWithOnboardingResume(data.token);
     } catch {
+      Alert.alert('Error', 'Could not verify sign-in link. Please try again.');
       router.replace('/auth/login');
     }
   }, [setAuthToken, fetchProfile]);
