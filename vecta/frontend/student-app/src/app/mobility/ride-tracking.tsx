@@ -15,6 +15,8 @@ import { useTheme } from '../../context/ThemeContext';
 type RideRow = Record<string, unknown> & {
   id: string;
   status: string;
+  ride_type?: string;
+  current_passengers?: string | number;
   pickup_lat: string | number;
   pickup_lng: string | number;
   dropoff_lat: string | number;
@@ -30,7 +32,8 @@ type RideRow = Record<string, unknown> & {
 };
 
 export default function RideTrackingScreen() {
-  const { rideId } = useLocalSearchParams<{ rideId: string }>();
+  const { rideId, type } = useLocalSearchParams<{ rideId: string; type?: string }>();
+  const isCarpool = type === 'carpool';
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const [ride, setRide] = useState<RideRow | null>(null);
@@ -95,7 +98,7 @@ export default function RideTrackingScreen() {
     if (!ride) return '';
     switch (ride.status) {
       case 'REQUESTED':
-        return 'Finding a driver…';
+        return isCarpool ? 'Finding a carpool match…' : 'Finding a driver…';
       case 'MATCHED':
       case 'DRIVER_ACCEPTED':
         return 'Driver is on the way';
@@ -108,7 +111,7 @@ export default function RideTrackingScreen() {
       default:
         return String(ride.status).replace(/_/g, ' ');
     }
-  }, [ride]);
+  }, [ride, isCarpool]);
 
   const cancelRide = useCallback(async () => {
     if (!rideId) return;
@@ -153,6 +156,13 @@ export default function RideTrackingScreen() {
   }
 
   const canCancel = ride.status === 'MATCHED' || ride.status === 'DRIVER_ACCEPTED';
+
+  const currentPassengers = Math.max(
+    1,
+    Number(ride.current_passengers ?? 1) || 1,
+  );
+  const carpoolDriverMatched =
+    isCarpool && ride.status !== 'REQUESTED' && Boolean(ride.driver_name);
 
   return (
     <View style={{ flex: 1, backgroundColor: surface, paddingTop: insets.top }}>
@@ -217,6 +227,39 @@ export default function RideTrackingScreen() {
 
       <View style={[styles.sheet, { backgroundColor: isDark ? '#0F1628' : VectaColors.surfaceBase, borderColor: colors.border }]}>
         <Text style={[styles.status, { color: VectaColors.accent }]}>{statusLine}</Text>
+
+        {isCarpool && ride.status === 'REQUESTED' ? (
+          <View style={[styles.carpoolWaitCard, { backgroundColor: isDark ? '#152238' : '#F0FFFE', borderColor: colors.border }]}>
+            <ActivityIndicator color={VectaColors.accent} size="large" />
+            <Text style={[styles.carpoolWaitTitle, { color: colors.text }]}>Finding your carpool</Text>
+            <Text style={[styles.carpoolWaitSub, { color: sub }]}>
+              Matching you with students going your way…
+            </Text>
+            <Text style={[styles.carpoolWaitNote, { color: sub }]}>
+              We will notify you when a driver is confirmed
+            </Text>
+          </View>
+        ) : null}
+
+        {carpoolDriverMatched ? (
+          <View style={[styles.carpoolRidersCard, { backgroundColor: isDark ? '#152238' : VectaColors.surface1, borderColor: colors.border }]}>
+            <Text style={[styles.carpoolRidersTitle, { color: colors.text }]}>Your carpool</Text>
+            <Text style={[styles.carpoolRidersNote, { color: sub }]}>
+              🔒 Rider details are private for safety
+            </Text>
+            <View style={styles.carpoolRidersRow}>
+              {Array.from({ length: currentPassengers }).map((_, i) => (
+                <View key={i} style={[styles.riderDot, { backgroundColor: isDark ? '#1a2838' : '#E5E7EB' }]}>
+                  <Text style={styles.riderDotText}>👤</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={[styles.carpoolPickupNote, { color: sub }]}>
+              Driver will pick up others before or after you based on the optimized route.
+            </Text>
+          </View>
+        ) : null}
+
         {ride.driver_name ? (
           <>
             <Text style={[styles.driver, { color: colors.text }]}>
@@ -274,4 +317,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelText: { fontFamily: VectaFonts.semiBold, color: VectaColors.error, fontSize: 16 },
+  carpoolWaitCard: {
+    marginTop: 16,
+    padding: 20,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  carpoolWaitTitle: { fontFamily: VectaFonts.bold, fontSize: 17, marginTop: 12 },
+  carpoolWaitSub: { fontFamily: VectaFonts.regular, fontSize: 14, marginTop: 8, textAlign: 'center' },
+  carpoolWaitNote: { fontFamily: VectaFonts.regular, fontSize: 12, marginTop: 8, textAlign: 'center' },
+  carpoolRidersCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+  },
+  carpoolRidersTitle: { fontFamily: VectaFonts.semiBold, fontSize: 16 },
+  carpoolRidersNote: { fontFamily: VectaFonts.regular, fontSize: 12, marginTop: 6 },
+  carpoolRidersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  riderDot: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  riderDotText: { fontSize: 18 },
+  carpoolPickupNote: { fontFamily: VectaFonts.regular, fontSize: 12, marginTop: 12, lineHeight: 18 },
 });

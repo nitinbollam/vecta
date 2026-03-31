@@ -26,7 +26,16 @@ import {
   acceptRide,
   startRide,
   completeRide,
+  requestPriorityRide,
+  calculateFare,
 } from '../../../services/mobility-service/src/ride-matching.service';
+import {
+  findOrCreateCarpoolSession,
+  getCarpoolStops,
+  markRiderPickedUp,
+  markRiderDroppedOff,
+  CARPOOL_PRICE_PER_MILE_CENTS,
+} from '../../../services/mobility-service/src/carpool.service';
 import {
   applyAsDriver,
   goOnline,
@@ -364,6 +373,221 @@ router.get('/rides/nearby-drivers', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'nearby-drivers failed');
     res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/rides/estimate', async (req: Request, res: Response) => {
+  try {
+    const miles = parseFloat(String(req.query.miles ?? ''));
+    if (!Number.isFinite(miles) || miles <= 0) {
+      res.status(400).json({ error: 'INVALID_MILES' });
+      return;
+    }
+    const priorityFare = calculateFare(miles);
+    const carpoolFareCents = Math.round(miles * CARPOOL_PRICE_PER_MILE_CENTS);
+    const savingsCents = priorityFare.estimatedFareCents - carpoolFareCents;
+    const savingsPct =
+      priorityFare.estimatedFareCents > 0
+        ? Math.round((1 - carpoolFareCents / priorityFare.estimatedFareCents) * 100)
+        : 0;
+    res.json({
+      miles,
+      priority: {
+        fareCents: priorityFare.estimatedFareCents,
+        pricePerMile: priorityFare.pricePerMileCents / 100,
+        label: 'Priority',
+        description: 'Your own private ride',
+        etaMinutes: 3,
+      },
+      carpool: {
+        fareCents: carpoolFareCents,
+        pricePerMile: 0.6,
+        label: 'Carpool',
+        description: 'Share with other students going your way',
+        etaMinutes: 6,
+        savingsCents,
+        savingsPct,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'rides/estimate failed');
+    res.status(500).json({ error: 'ESTIMATE_FAILED' });
+  }
+});
+
+router.post('/rides/request/priority', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        pickupLat: z.number(),
+        pickupLng: z.number(),
+        pickupAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        dropoffLat: z.number(),
+        dropoffLng: z.number(),
+        dropoffAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        estimatedMiles: z.number().positive().max(500),
+      })
+      .parse(req.body);
+    const riderStudentId = req.vectaUser!.sub;
+
+    const result = await requestPriorityRide({
+      riderStudentId,
+      pickupLat: body.pickupLat,
+      pickupLng: body.pickupLng,
+      pickupAddress: body.pickupAddress,
+      dropoffLat: body.dropoffLat,
+      dropoffLng: body.dropoffLng,
+      dropoffAddress: body.dropoffAddress,
+      estimatedMiles: body.estimatedMiles,
+    });
+
+    if (result.driver?.id) {
+      notifyDriver(result.driver.id as string, {
+        type: 'RIDE_REQUEST',
+        rideId: result.rideId,
+        rideType: 'PRIORITY',
+        pickupAddress: body.pickupAddress,
+        dropoffAddress: body.dropoffAddress,
+        estimatedMiles: body.estimatedMiles,
+        fareCents: result.fare.estimatedFareCents,
+        driverPayout: result.fare.driverPayoutCents,
+      });
+    }
+
+    const d = result.driver;
+    res.json({
+      rideId: result.rideId,
+      rideType: 'PRIORITY',
+      fare: {
+        estimatedFareCents: result.fare.estimatedFareCents,
+        pricePerMileCents: result.fare.pricePerMileCents,
+        driverPayoutCents: result.fare.driverPayoutCents,
+      },
+      driver: d
+        ? {
+            vehicleMake: d.vehicle_make,
+            vehicleModel: d.vehicle_model,
+            vehicleColor: d.vehicle_color,
+            vehiclePlate: d.vehicle_plate,
+            rating: d.rating,
+            distanceMeters: d.distance_meters,
+          }
+        : null,
+      matched: result.matched,
+    });
+  } catch (err) {
+    logger.error({ err }, 'rides/request/priority failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    res.status(500).json({ error: 'RIDE_REQUEST_FAILED' });
+  }
+});
+
+router.post('/rides/request/carpool', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        pickupLat: z.number(),
+        pickupLng: z.number(),
+        pickupAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        dropoffLat: z.number(),
+        dropoffLng: z.number(),
+        dropoffAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        estimatedMiles: z.number().positive().max(500),
+      })
+      .parse(req.body);
+    const riderStudentId = req.vectaUser!.sub;
+
+    const result = await findOrCreateCarpoolSession({
+      riderStudentId,
+      pickupLat: body.pickupLat,
+      pickupLng: body.pickupLng,
+      pickupAddress: body.pickupAddress,
+      dropoffLat: body.dropoffLat,
+      dropoffLng: body.dropoffLng,
+      dropoffAddress: body.dropoffAddress,
+      estimatedMiles: body.estimatedMiles,
+    });
+
+    const priorityRef = calculateFare(body.estimatedMiles).estimatedFareCents;
+    res.json({
+      rideId: result.rideId,
+      sessionId: result.sessionId,
+      rideType: 'CARPOOL',
+      fareCents: result.fareCents,
+      waitMinutes: result.waitMinutes,
+      matched: result.matched,
+      driverInfo: result.driverInfo,
+      savings: {
+        priorityFareCents: priorityRef,
+        carpoolFareCents: result.fareCents,
+        savingsCents: priorityRef - result.fareCents,
+        savingsPct:
+          priorityRef > 0 ? Math.round((1 - result.fareCents / priorityRef) * 100) : 0,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'rides/request/carpool failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    res.status(500).json({ error: 'CARPOOL_REQUEST_FAILED' });
+  }
+});
+
+router.get('/carpool/:sessionId/stops', async (req: Request, res: Response) => {
+  try {
+    const stops = await getCarpoolStops(req.params.sessionId);
+    res.json({ stops });
+  } catch (err) {
+    logger.error({ err }, 'carpool stops failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.post('/carpool/stop/:stopId/pickup', async (req: Request, res: Response) => {
+  try {
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await markRiderPickedUp(req.params.stopId, driver.id);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, 'carpool pickup failed');
+    res.status(500).json({ error: 'PICKUP_FAILED' });
+  }
+});
+
+router.post('/carpool/stop/:stopId/dropoff', async (req: Request, res: Response) => {
+  try {
+    const { actualMiles } = z.object({ actualMiles: z.number().positive().max(500) }).parse(req.body);
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    await markRiderDroppedOff(req.params.stopId, driver.id, actualMiles);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, 'carpool dropoff failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    if ((err as Error).message === 'INSUFFICIENT_BALANCE') {
+      res.status(402).json({ error: 'INSUFFICIENT_BALANCE' });
+      return;
+    }
+    res.status(500).json({ error: 'DROPOFF_FAILED' });
   }
 });
 

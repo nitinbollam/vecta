@@ -20,6 +20,8 @@ import { startDriverBackgroundLocation, stopDriverBackgroundLocation } from '../
 type Ride = {
   id: string;
   status: string;
+  ride_type?: string;
+  carpool_session_id?: string | null;
   pickup_lat: string;
   pickup_lng: string;
   dropoff_lat: string;
@@ -27,6 +29,15 @@ type Ride = {
   pickup_address: string;
   dropoff_address: string;
   rider_name?: string | null;
+};
+
+type CarpoolStopRow = {
+  id: string;
+  pickup_address: string;
+  dropoff_address: string;
+  status: string;
+  rider_fare_cents?: number | null;
+  rider_miles?: string | number | null;
 };
 
 async function fetchDrivingRoute(
@@ -60,6 +71,7 @@ export default function RideActiveScreen() {
   const [loading, setLoading] = useState(true);
   const [myLoc, setMyLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+  const [carpoolStops, setCarpoolStops] = useState<CarpoolStopRow[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
   const load = useCallback(async () => {
@@ -71,6 +83,18 @@ export default function RideActiveScreen() {
         const r = (await res.json()) as Ride;
         setRide(r);
         if (r.status === 'IN_PROGRESS') setPhase('trip');
+        if (r.ride_type === 'CARPOOL' && r.carpool_session_id) {
+          const sRes = await fetch(
+            `${API_V1_BASE}/mobility/carpool/${r.carpool_session_id}/stops`,
+            { headers },
+          );
+          if (sRes.ok) {
+            const data = (await sRes.json()) as { stops?: CarpoolStopRow[] };
+            setCarpoolStops(data.stops ?? []);
+          }
+        } else {
+          setCarpoolStops([]);
+        }
       }
     } finally {
       setLoading(false);
@@ -197,8 +221,10 @@ export default function RideActiveScreen() {
     );
   }
 
-  const showPickupPin = phase !== 'trip';
-  const showDropoffPin = phase === 'trip' || ride.status === 'IN_PROGRESS';
+  const showCarpoolStops = ride.ride_type === 'CARPOOL' && carpoolStops.length > 0;
+  const showPickupPin = !showCarpoolStops && phase !== 'trip';
+  const showDropoffPin =
+    !showCarpoolStops && (phase === 'trip' || ride.status === 'IN_PROGRESS');
 
   const pins = [
     ...(showPickupPin && Number.isFinite(plat) && Number.isFinite(plng)
@@ -226,7 +252,85 @@ export default function RideActiveScreen() {
         <Text style={styles.title}>Active ride</Text>
         <Text style={styles.meta}>{ride.rider_name ?? 'Rider'}</Text>
 
-        {phase === 'pickup' && (
+        {showCarpoolStops ? (
+          <View style={styles.stopsCard}>
+            <Text style={styles.stopsTitle}>
+              Carpool Stops ({carpoolStops.filter((s) => s.status === 'DROPPED_OFF').length}/
+              {carpoolStops.length} complete)
+            </Text>
+            {carpoolStops.map((stop, index) => (
+              <View key={stop.id} style={styles.stopRow}>
+                <View
+                  style={[
+                    styles.stopDot,
+                    stop.status === 'DROPPED_OFF' && styles.stopDotDone,
+                    stop.status === 'PICKED_UP' && styles.stopDotActive,
+                  ]}
+                />
+                <View style={styles.stopInfo}>
+                  <Text style={styles.stopRider}>Rider {index + 1}</Text>
+                  <Text style={styles.stopAddress} numberOfLines={1}>
+                    ↑ {stop.pickup_address}
+                  </Text>
+                  <Text style={styles.stopAddress} numberOfLines={1}>
+                    ↓ {stop.dropoff_address}
+                  </Text>
+                  <Text style={styles.stopFare}>
+                    +${((Number(stop.rider_fare_cents) || 0) / 100).toFixed(2)} for you
+                  </Text>
+                </View>
+                {stop.status === 'WAITING' ? (
+                  <TouchableOpacity
+                    style={styles.stopActionBtn}
+                    onPress={async () => {
+                      const headers = await getAuthHeaders();
+                      await fetch(`${API_V1_BASE}/mobility/carpool/stop/${stop.id}/pickup`, {
+                        method: 'POST',
+                        headers,
+                      });
+                      setCarpoolStops((prev) =>
+                        prev.map((s) => (s.id === stop.id ? { ...s, status: 'PICKED_UP' } : s)),
+                      );
+                      void load();
+                    }}
+                  >
+                    <Text style={styles.stopActionText}>Picked Up</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {stop.status === 'PICKED_UP' ? (
+                  <TouchableOpacity
+                    style={[styles.stopActionBtn, styles.stopDropoffBtn]}
+                    onPress={async () => {
+                      const miles =
+                        stop.rider_miles != null && stop.rider_miles !== ''
+                          ? Number(stop.rider_miles)
+                          : 2;
+                      const headers = await getAuthHeaders();
+                      await fetch(`${API_V1_BASE}/mobility/carpool/stop/${stop.id}/dropoff`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ actualMiles: Number.isFinite(miles) ? miles : 2 }),
+                      });
+                      setCarpoolStops((prev) =>
+                        prev.map((s) => (s.id === stop.id ? { ...s, status: 'DROPPED_OFF' } : s)),
+                      );
+                      void load();
+                    }}
+                  >
+                    <Text style={styles.stopActionText}>Dropped Off</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ))}
+            {carpoolStops.every((s) => s.status === 'DROPPED_OFF') ? (
+              <TouchableOpacity style={styles.btn} onPress={() => router.replace('/(tabs)')}>
+                <Text style={styles.btnText}>DONE — BACK TO HOME</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
+        {!showCarpoolStops && phase === 'pickup' && (
           <>
             <Text style={styles.label}>Head to pickup</Text>
             <Text style={styles.addr}>{ride.pickup_address}</Text>
@@ -239,7 +343,7 @@ export default function RideActiveScreen() {
           </>
         )}
 
-        {phase === 'wait' && (
+        {!showCarpoolStops && phase === 'wait' && (
           <>
             <Text style={styles.label}>Waiting for rider</Text>
             <TouchableOpacity style={styles.btn} onPress={() => void startRide()}>
@@ -248,7 +352,7 @@ export default function RideActiveScreen() {
           </>
         )}
 
-        {phase === 'trip' && (
+        {!showCarpoolStops && phase === 'trip' && (
           <>
             <Text style={styles.label}>Ride in progress</Text>
             <Text style={styles.addr}>{ride.dropoff_address}</Text>
@@ -301,4 +405,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
+  stopsCard: {
+    marginTop: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 12,
+    padding: 14,
+  },
+  stopsTitle: { color: '#00E6CC', fontWeight: '800', fontSize: 15, marginBottom: 12 },
+  stopRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, gap: 10 },
+  stopDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#64748B',
+    marginTop: 6,
+  },
+  stopDotDone: { backgroundColor: '#22C55E' },
+  stopDotActive: { backgroundColor: '#00E6CC' },
+  stopInfo: { flex: 1, minWidth: 0 },
+  stopRider: { color: '#E2E8F0', fontWeight: '700', fontSize: 14 },
+  stopAddress: { color: '#94A3B8', fontSize: 12, marginTop: 4 },
+  stopFare: { color: '#00E6CC', fontSize: 12, fontWeight: '600', marginTop: 6 },
+  stopActionBtn: {
+    backgroundColor: '#00E6CC',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  stopDropoffBtn: { backgroundColor: '#0EA5E9' },
+  stopActionText: { color: '#001F3F', fontWeight: '800', fontSize: 12 },
 });

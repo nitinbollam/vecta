@@ -82,6 +82,150 @@ export async function findNearestDriver(
   return result.rows[0] ?? null;
 }
 
+async function sendExpoPushForDriverRideRequest(
+  driverId: string,
+  p: {
+    rideId: string;
+    pickupAddress: string;
+    dropoffAddress: string;
+    estimatedMiles: number;
+    fareCents: number;
+    driverPayoutCents: number;
+    rideType?: string;
+  },
+): Promise<void> {
+  try {
+    const pushRow = await queryOne<{ expo_token: string }>(
+      `SELECT expo_token FROM driver_push_tokens WHERE driver_id=$1`,
+      [driverId],
+    );
+    if (!pushRow?.expo_token) return;
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: pushRow.expo_token,
+        title: '🚗 New Ride Request',
+        body: `Pickup: ${p.pickupAddress}`,
+        data: {
+          type: 'RIDE_REQUEST',
+          ride: {
+            id: p.rideId,
+            pickupAddress: p.pickupAddress,
+            dropoffAddress: p.dropoffAddress,
+            estimatedMiles: p.estimatedMiles,
+            fareCents: p.fareCents,
+            driverPayout: p.driverPayoutCents,
+            rideType: p.rideType ?? 'PRIORITY',
+          },
+        },
+        sound: 'default',
+        priority: 'high',
+      }),
+    });
+  } catch (err) {
+    logger.warn({ err }, 'Push notification failed');
+  }
+}
+
+export async function requestPriorityRide(params: {
+  riderStudentId: string;
+  pickupLat: number;
+  pickupLng: number;
+  pickupAddress: string;
+  dropoffLat: number;
+  dropoffLng: number;
+  dropoffAddress: string;
+  estimatedMiles: number;
+}): Promise<{
+  rideId: string;
+  fare: { estimatedFareCents: number; pricePerMileCents: number; driverPayoutCents: number };
+  driver: Record<string, unknown> | null;
+  matched: boolean;
+}> {
+  const fareCalc = calculateFare(params.estimatedMiles);
+  const priorityFareCents = fareCalc.estimatedFareCents;
+  const platformFee = fareCalc.platformFeeCents;
+  const driverPayout = fareCalc.driverPayoutCents;
+
+  const ride = await queryOne<{ id: string }>(
+    `
+    INSERT INTO rides (
+      rider_student_id,
+      ride_type,
+      max_passengers,
+      current_passengers,
+      pickup_lat, pickup_lng, pickup_address,
+      dropoff_lat, dropoff_lng, dropoff_address,
+      estimated_miles,
+      price_per_mile_cents,
+      estimated_fare_cents,
+      platform_fee_cents,
+      driver_payout_cents,
+      status
+    ) VALUES ($1,'PRIORITY',1,1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'REQUESTED')
+    RETURNING id
+  `,
+    [
+      params.riderStudentId,
+      params.pickupLat,
+      params.pickupLng,
+      params.pickupAddress,
+      params.dropoffLat,
+      params.dropoffLng,
+      params.dropoffAddress,
+      params.estimatedMiles,
+      fareCalc.pricePerMileCents,
+      priorityFareCents,
+      platformFee,
+      driverPayout,
+    ],
+  );
+
+  const rideId = ride!.id;
+
+  await query(
+    `INSERT INTO ride_audit_log (ride_id, event, actor, data) VALUES ($1, 'RIDE_REQUESTED', $2, $3::jsonb)`,
+    [rideId, params.riderStudentId, JSON.stringify({ fare: fareCalc, params, rideType: 'PRIORITY' })],
+  );
+
+  const driver = await findNearestDriver(params.pickupLat, params.pickupLng);
+
+  if (driver) {
+    await query(`UPDATE rides SET driver_id=$1, status='MATCHED', matched_at=NOW() WHERE id=$2`, [
+      driver.id as string,
+      rideId,
+    ]);
+
+    await query(`INSERT INTO ride_audit_log (ride_id, event, actor, data) VALUES ($1, 'DRIVER_MATCHED', 'SYSTEM', $2::jsonb)`, [
+      rideId,
+      JSON.stringify({ driverId: driver.id, distanceMeters: driver.distance_meters, rideType: 'PRIORITY' }),
+    ]);
+
+    await sendExpoPushForDriverRideRequest(driver.id as string, {
+      rideId,
+      pickupAddress: params.pickupAddress,
+      dropoffAddress: params.dropoffAddress,
+      estimatedMiles: params.estimatedMiles,
+      fareCents: priorityFareCents,
+      driverPayoutCents: fareCalc.driverPayoutCents,
+      rideType: 'PRIORITY',
+    });
+  }
+
+  logger.info({ rideId, matched: Boolean(driver), rideType: 'PRIORITY' }, 'priority ride requested');
+  return {
+    rideId,
+    fare: {
+      estimatedFareCents: priorityFareCents,
+      pricePerMileCents: fareCalc.pricePerMileCents,
+      driverPayoutCents: fareCalc.driverPayoutCents,
+    },
+    driver,
+    matched: Boolean(driver),
+  };
+}
+
 export async function requestRide(params: {
   riderStudentId: string;
   pickupLat: number;
@@ -145,38 +289,14 @@ export async function requestRide(params: {
       JSON.stringify({ driverId: driver.id, distanceMeters: driver.distance_meters }),
     ]);
 
-    try {
-      const pushRow = await queryOne<{ expo_token: string }>(
-        `SELECT expo_token FROM driver_push_tokens WHERE driver_id=$1`,
-        [driver.id as string],
-      );
-      if (pushRow?.expo_token) {
-        await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: pushRow.expo_token,
-            title: '🚗 New Ride Request',
-            body: `Pickup: ${params.pickupAddress}`,
-            data: {
-              type: 'RIDE_REQUEST',
-              ride: {
-                id: rideId,
-                pickupAddress: params.pickupAddress,
-                dropoffAddress: params.dropoffAddress,
-                estimatedMiles: params.estimatedMiles,
-                fareCents: fare.estimatedFareCents,
-                driverPayout: fare.driverPayoutCents,
-              },
-            },
-            sound: 'default',
-            priority: 'high',
-          }),
-        });
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Push notification failed');
-    }
+    await sendExpoPushForDriverRideRequest(driver.id as string, {
+      rideId,
+      pickupAddress: params.pickupAddress,
+      dropoffAddress: params.dropoffAddress,
+      estimatedMiles: params.estimatedMiles,
+      fareCents: fare.estimatedFareCents,
+      driverPayoutCents: fare.driverPayoutCents,
+    });
   }
 
   logger.info({ rideId, matched: Boolean(driver) }, 'ride requested');
