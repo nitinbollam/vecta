@@ -29,6 +29,8 @@ export async function applyAsDriver(
     vehicleColor: string;
     vehiclePlate: string;
     vehicleCapacity: number;
+    /** Optional invite code from a student referral link (driver app / web signup). */
+    driverReferralInviteCode?: string | null;
   },
 ): Promise<{ driverProfileId: string }> {
   const student = await queryOne<{ kyc_status: string; visa_type: string | null }>(
@@ -73,6 +75,17 @@ export async function applyAsDriver(
     throw new Error('Insurance document is expired');
   }
 
+  let referredByInviteCode: string | null = null;
+  if (params.driverReferralInviteCode?.trim()) {
+    const code = params.driverReferralInviteCode.trim().toUpperCase();
+    const ref = await queryOne<{ id: string }>(
+      `SELECT id FROM driver_referrals
+       WHERE UPPER(invite_code)=UPPER($1) AND referrer_student_id <> $2 AND status='PENDING'`,
+      [code, studentId],
+    );
+    if (ref) referredByInviteCode = code;
+  }
+
   const result = await queryOne<{ id: string }>(
     `
     INSERT INTO driver_profiles (
@@ -80,8 +93,9 @@ export async function applyAsDriver(
       license_number_enc, license_state, license_expiry, license_doc_url,
       insurance_doc_url, insurance_expiry,
       vehicle_make, vehicle_model, vehicle_year, vehicle_color,
-      vehicle_plate, vehicle_capacity, status
-    ) VALUES ($1,$2,$3,$4::date,$5,$6,$7::date,$8,$9,$10::date,$11,$12,$13,$14,$15,$16,'PENDING_REVIEW')
+      vehicle_plate, vehicle_capacity, status,
+      referred_by_invite_code
+    ) VALUES ($1,$2,$3,$4::date,$5,$6,$7::date,$8,$9,$10::date,$11,$12,$13,$14,$15,$16,'PENDING_REVIEW',$17)
     RETURNING id
   `,
     [
@@ -101,8 +115,18 @@ export async function applyAsDriver(
       params.vehicleColor,
       params.vehiclePlate,
       params.vehicleCapacity,
+      referredByInviteCode,
     ],
   );
+
+  if (referredByInviteCode) {
+    await query(
+      `UPDATE driver_referrals
+       SET referee_student_id=$1, status='SIGNED_UP'
+       WHERE UPPER(invite_code)=UPPER($2) AND status='PENDING'`,
+      [studentId, referredByInviteCode],
+    );
+  }
 
   logger.info({ studentId, driverProfileId: result!.id }, 'Driver application submitted');
   return { driverProfileId: result!.id };

@@ -39,6 +39,11 @@ import {
 import { stripFreeText } from '../lib/sanitize';
 import { fileTicket, processRefund, flagAccount } from '../../../services/compliance-service/src/dispute.service';
 import { PLATFORM_ACCOUNT_ID } from '../../../services/compliance-service/src/revenue.service';
+import {
+  createGenericDriverInvite,
+  getDriverReferralOfferCents,
+  setDriverReferralOfferCents,
+} from '../../../services/compliance-service/src/referral.service';
 
 const logger = createLogger('compliance-router');
 const router = Router();
@@ -55,6 +60,37 @@ function officerAuth(req: Request, res: Response, next: () => void) {
 // ---------------------------------------------------------------------------
 // Compliance case management (officer-facing)
 // ---------------------------------------------------------------------------
+
+router.get('/compliance/referral-offer', officerAuth, async (_req: Request, res: Response) => {
+  try {
+    const offer = await getDriverReferralOfferCents();
+    res.json(offer);
+  } catch (err) {
+    logger.error({ err }, 'referral-offer get failed');
+    res.status(500).json({ error: 'REFERRAL_OFFER_FETCH_FAILED' });
+  }
+});
+
+router.patch('/compliance/referral-offer', officerAuth, async (req: Request, res: Response) => {
+  try {
+    const { referrerCents, refereeCents } = z
+      .object({
+        referrerCents: z.number().int().min(0).max(500_000),
+        refereeCents: z.number().int().min(0).max(500_000),
+      })
+      .parse(req.body);
+    await setDriverReferralOfferCents({ referrerCents, refereeCents });
+    const offer = await getDriverReferralOfferCents();
+    res.json({ ok: true, ...offer });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    logger.error({ err }, 'referral-offer patch failed');
+    res.status(500).json({ error: 'REFERRAL_OFFER_UPDATE_FAILED' });
+  }
+});
 
 router.get('/compliance/cases', officerAuth, async (req: Request, res: Response) => {
   try {
@@ -331,6 +367,55 @@ router.get('/reputation/score', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'Reputation score fetch failed');
     res.status(500).json({ error: 'REPUTATION_SCORE_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Driver referral (student app — invite friends to drive)
+// ---------------------------------------------------------------------------
+
+router.post('/referral/driver', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const result = await createGenericDriverInvite(req.vectaUser.sub);
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, 'referral/driver create failed');
+    res.status(500).json({ error: 'REFERRAL_FAILED' });
+  }
+});
+
+router.get('/referral/driver/status', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const referrals = await query(
+      `
+      SELECT invite_code, referee_email, status, created_at, completed_at
+      FROM driver_referrals
+      WHERE referrer_student_id=$1
+      ORDER BY created_at DESC
+      LIMIT 10
+    `,
+      [req.vectaUser.sub],
+    );
+    const { referrerCents } = await getDriverReferralOfferCents();
+    const credited = referrals.rows.filter((r: { status: string }) => r.status === 'CREDITED').length;
+    const pending = referrals.rows.filter((r: { status: string }) => r.status === 'PENDING').length;
+    res.json({
+      referrals: referrals.rows,
+      totalCredited: credited,
+      totalPending: pending,
+      totalEarnedCents: credited * referrerCents,
+    });
+  } catch (err) {
+    logger.error({ err }, 'referral driver status failed');
+    res.status(500).json({ error: 'REFERRAL_STATUS_FAILED' });
   }
 });
 

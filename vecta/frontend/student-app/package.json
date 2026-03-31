@@ -19,6 +19,7 @@
     "@expo-google-fonts/jetbrains-mono": "^0.2.3",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/datetimepicker": "8.6.0",
     "@rnmapbox/maps": "^10.1.31",
     "@vecta/types": "*",
     "expo": "^55.0.8",

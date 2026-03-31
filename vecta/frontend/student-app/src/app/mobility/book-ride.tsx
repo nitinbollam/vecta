@@ -15,7 +15,8 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,9 +27,47 @@ import { useTheme } from '../../context/ThemeContext';
 import { haversineMiles } from '../../lib/ride-pricing';
 import { searchAddress, reverseGeocode, type GeocodingResult } from '../../services/geocoding';
 
+function scheduleSlotPresets(): { label: string; at: Date }[] {
+  const now = new Date();
+  const out: { label: string; at: Date }[] = [];
+  const tonight = new Date(now);
+  tonight.setHours(22, 0, 0, 0);
+  const minAhead = new Date(now.getTime() + 30 * 60 * 1000);
+  if (tonight.getTime() > minAhead.getTime()) {
+    out.push({ label: 'Tonight 10pm', at: tonight });
+  }
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const t8 = new Date(tomorrow);
+  t8.setHours(8, 0, 0, 0);
+  const t12 = new Date(tomorrow);
+  t12.setHours(12, 0, 0, 0);
+  const t17 = new Date(tomorrow);
+  t17.setHours(17, 0, 0, 0);
+  out.push(
+    { label: 'Tomorrow 8am', at: t8 },
+    { label: 'Tomorrow 12pm', at: t12 },
+    { label: 'Tomorrow 5pm', at: t17 },
+  );
+  return out;
+}
+
 export default function BookRideScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+
+  const params = useLocalSearchParams<{
+    scheduleMode?: string;
+    pickupLat?: string;
+    pickupLng?: string;
+    pickupAddress?: string;
+    dropoffLat?: string;
+    dropoffLng?: string;
+    dropoffAddress?: string;
+    miles?: string;
+  }>();
+
+  const isScheduleModeParam = params.scheduleMode === 'true';
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -64,6 +103,9 @@ export default function BookRideScreen() {
   } | null>(null);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState(isScheduleModeParam);
+  const [scheduledTime, setScheduledTime] = useState<Date | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const fetchRoute = useCallback(
     async (fromLng: number, fromLat: number, toLng: number, toLat: number) => {
@@ -92,6 +134,10 @@ export default function BookRideScreen() {
   useEffect(() => {
     (async () => {
       try {
+        if (params.scheduleMode === 'true' && params.pickupLat && params.pickupLng) {
+          setLoadingLoc(false);
+          return;
+        }
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
           setErr('Location permission is required to set pickup.');
@@ -111,7 +157,7 @@ export default function BookRideScreen() {
         setLoadingLoc(false);
       }
     })();
-  }, []);
+  }, [params.pickupLat, params.pickupLng, params.scheduleMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -193,6 +239,38 @@ export default function BookRideScreen() {
     setRideType(null);
   }, [pickupCoords, dropoffCoords, estimatedMiles]);
 
+  useEffect(() => {
+    if (!isScheduleModeParam) return;
+    setScheduleMode(true);
+    const pl = params.pickupLat ? Number(params.pickupLat) : NaN;
+    const pg = params.pickupLng ? Number(params.pickupLng) : NaN;
+    if (Number.isFinite(pl) && Number.isFinite(pg)) {
+      setPickupCoords({ lat: pl, lng: pg });
+    }
+    if (params.pickupAddress) {
+      setPickupAddress(decodeURIComponent(params.pickupAddress));
+    }
+    const dl = params.dropoffLat ? Number(params.dropoffLat) : NaN;
+    const dg = params.dropoffLng ? Number(params.dropoffLng) : NaN;
+    if (Number.isFinite(dl) && Number.isFinite(dg)) {
+      setDropoffCoords({ lat: dl, lng: dg });
+    }
+    if (params.dropoffAddress) {
+      const name = decodeURIComponent(params.dropoffAddress);
+      setDropoffPlaceName(name);
+      setDropoffInput(name);
+    }
+    if (params.miles) {
+      const m = Number(params.miles);
+      if (Number.isFinite(m) && m > 0) {
+        setDirectionsMiles(m);
+      }
+    }
+    if (Number.isFinite(pl) && Number.isFinite(pg) && Number.isFinite(dl) && Number.isFinite(dg)) {
+      void fetchRoute(pg, pl, dg, dl);
+    }
+  }, [isScheduleModeParam, params, fetchRoute]);
+
   const pickupEtaHint =
     nearbyDrivers != null && nearbyDrivers > 0 ? '~5–12 min pickup' : null;
 
@@ -202,9 +280,41 @@ export default function BookRideScreen() {
       setErr('Set pickup, dropoff, and ride type.');
       return;
     }
+    if (scheduleMode) {
+      if (!scheduledTime) {
+        Alert.alert('Pick a time', 'Choose when you want to be picked up.');
+        return;
+      }
+    }
     setLoading(true);
     try {
       const headers = await getAuthHeaders();
+      if (scheduleMode && scheduledTime) {
+        const res = await fetch(`${API_V1_BASE}/mobility/rides/schedule`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            pickupLat: pickupCoords.lat,
+            pickupLng: pickupCoords.lng,
+            pickupAddress,
+            dropoffLat: dropoffCoords.lat,
+            dropoffLng: dropoffCoords.lng,
+            dropoffAddress: dropoffPlaceName,
+            estimatedMiles: Math.round(estimatedMiles * 100) / 100,
+            scheduledFor: scheduledTime.toISOString(),
+            rideType,
+          }),
+        });
+        const data = (await res.json()) as { error?: string; message?: string };
+        if (!res.ok) throw new Error(data.error ?? 'Schedule failed');
+        Alert.alert(
+          '✅ Ride Scheduled!',
+          `Your ride is confirmed for ${scheduledTime.toLocaleTimeString()}.\n\nWe will match a driver 15 minutes before pickup and notify you.`,
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)/rides') }],
+        );
+        return;
+      }
+
       const endpoint =
         rideType === 'PRIORITY' ? '/mobility/rides/request/priority' : '/mobility/rides/request/carpool';
       const res = await fetch(`${API_V1_BASE}${endpoint}`, {
@@ -262,7 +372,16 @@ export default function BookRideScreen() {
     } finally {
       setLoading(false);
     }
-  }, [rideType, pickupCoords, pickupAddress, dropoffCoords, dropoffPlaceName, estimatedMiles]);
+  }, [
+    rideType,
+    pickupCoords,
+    pickupAddress,
+    dropoffCoords,
+    dropoffPlaceName,
+    estimatedMiles,
+    scheduleMode,
+    scheduledTime,
+  ]);
 
   const surface = isDark ? VectaColors.primaryMid : VectaColors.surfaceBase;
   const sub = isDark ? '#7A9BAD' : VectaColors.textSecondary;
@@ -481,11 +600,88 @@ export default function BookRideScreen() {
               ) : null}
             </TouchableOpacity>
 
-            <View style={styles.comparisonBar}>
-              <Text style={styles.comparisonText}>
-                🆚 Uber would charge ~${(estimatedMiles * 2.2).toFixed(2)} for this trip
+            <TouchableOpacity
+              style={[
+                styles.scheduleToggle,
+                scheduleMode && styles.scheduleToggleActive,
+                { borderColor: scheduleMode ? VectaColors.accent : colors.border },
+              ]}
+              onPress={() => setScheduleMode(!scheduleMode)}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={scheduleMode ? 'calendar' : 'calendar-outline'}
+                size={18}
+                color={scheduleMode ? '#001F3F' : VectaColors.accent}
+              />
+              <Text
+                style={[
+                  styles.scheduleToggleText,
+                  { color: scheduleMode ? '#001F3F' : VectaColors.accent },
+                ]}
+              >
+                {scheduleMode ? 'Scheduling for later' : 'Schedule for later'}
               </Text>
-            </View>
+            </TouchableOpacity>
+
+            {scheduleMode ? (
+              <View style={styles.scheduleSection}>
+                <Text style={[styles.scheduleSectionLabel, { color: colors.text }]}>Pickup time</Text>
+                <View style={styles.schedulePills}>
+                  {scheduleSlotPresets().map((slot) => (
+                    <TouchableOpacity
+                      key={slot.label}
+                      style={[
+                        styles.schedulePill,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: isDark ? '#152238' : VectaColors.surface1,
+                        },
+                      ]}
+                      onPress={() => setScheduledTime(slot.at)}
+                    >
+                      <Text style={[styles.schedulePillText, { color: colors.text }]}>{slot.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={[
+                      styles.schedulePill,
+                      {
+                        borderColor: VectaColors.accent,
+                        backgroundColor: isDark ? '#0F1F2E' : '#F0FFFE',
+                      },
+                    ]}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <Text style={[styles.schedulePillText, { color: VectaColors.accent }]}>Custom time</Text>
+                  </TouchableOpacity>
+                </View>
+                {scheduledTime ? (
+                  <Text style={[styles.scheduledHint, { color: sub }]}>
+                    Selected: {scheduledTime.toLocaleString()}
+                  </Text>
+                ) : null}
+                {showTimePicker ? (
+                  <DateTimePicker
+                    value={scheduledTime ?? new Date(Date.now() + 60 * 60 * 1000)}
+                    mode="datetime"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={new Date(Date.now() + 30 * 60 * 1000)}
+                    maximumDate={new Date(Date.now() + 24 * 60 * 60 * 1000)}
+                    onChange={(event, d) => {
+                      if (Platform.OS === 'android') setShowTimePicker(false);
+                      if (event.type === 'dismissed' && Platform.OS === 'ios') setShowTimePicker(false);
+                      if (d) setScheduledTime(d);
+                    }}
+                  />
+                ) : null}
+                {Platform.OS === 'ios' && showTimePicker ? (
+                  <TouchableOpacity style={styles.scheduleDoneIos} onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.scheduleDoneIosText}>Done</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -509,10 +705,13 @@ export default function BookRideScreen() {
               <ActivityIndicator color={VectaColors.primary} />
             ) : (
               <Text style={styles.confirmButtonText}>
-                Request {rideType === 'PRIORITY' ? '🚗 Priority' : '🚌 Carpool'} — $
-                {(
-                  (rideType === 'PRIORITY' ? estimate.priority.fareCents : estimate.carpool.fareCents) / 100
-                ).toFixed(2)}
+                {scheduleMode
+                  ? `Schedule ${rideType === 'PRIORITY' ? '🚗 Priority' : '🚌 Carpool'} — $${(
+                      (rideType === 'PRIORITY' ? estimate.priority.fareCents : estimate.carpool.fareCents) / 100
+                    ).toFixed(2)}`
+                  : `Request ${rideType === 'PRIORITY' ? '🚗 Priority' : '🚌 Carpool'} — $${(
+                      (rideType === 'PRIORITY' ? estimate.priority.fareCents : estimate.carpool.fareCents) / 100
+                    ).toFixed(2)}`}
               </Text>
             )}
           </TouchableOpacity>
@@ -632,14 +831,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedBadgeText: { color: '#001F3F', fontSize: 12, fontFamily: VectaFonts.bold },
-  comparisonBar: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 4,
+  scheduleToggle: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1.5,
+    borderColor: VectaColors.accent,
+    marginTop: 8,
+    justifyContent: 'center',
   },
-  comparisonText: { fontSize: 12, color: '#92400E', fontFamily: VectaFonts.medium },
+  scheduleToggleActive: {
+    backgroundColor: VectaColors.accent,
+    borderColor: VectaColors.accent,
+  },
+  scheduleToggleText: {
+    fontFamily: VectaFonts.semiBold,
+    fontSize: 15,
+  },
+  scheduleSection: { marginTop: 14 },
+  scheduleSectionLabel: { fontFamily: VectaFonts.semiBold, fontSize: 14, marginBottom: 8 },
+  schedulePills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  schedulePill: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+  },
+  schedulePillText: { fontFamily: VectaFonts.medium, fontSize: 13 },
+  scheduledHint: { fontFamily: VectaFonts.regular, fontSize: 12, marginTop: 8 },
+  scheduleDoneIos: { alignSelf: 'flex-end', marginTop: 8 },
+  scheduleDoneIosText: { fontFamily: VectaFonts.semiBold, color: VectaColors.accent, fontSize: 15 },
   confirmButton: {
     backgroundColor: '#00E6CC',
     borderRadius: 16,

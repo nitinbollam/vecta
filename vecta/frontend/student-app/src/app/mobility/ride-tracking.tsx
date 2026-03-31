@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapboxMap from '../../components/MapboxMap';
+import NoDriverFallback from '../../components/NoDriverFallback';
 import { API_V1_BASE, getAuthHeaders, getWsBase, MAPBOX_TOKEN } from '../../config/api';
 import { VectaColors, VectaFonts, VectaRadius, VectaSpacing } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
@@ -29,6 +30,7 @@ type RideRow = Record<string, unknown> & {
   vehicle_model: string | null;
   vehicle_color: string | null;
   vehicle_plate: string | null;
+  estimated_miles?: string | number | null;
 };
 
 export default function RideTrackingScreen() {
@@ -40,6 +42,8 @@ export default function RideTrackingScreen() {
   const [driverPin, setDriverPin] = useState<{ lat: number; lng: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [waitMinutes, setWaitMinutes] = useState(0);
+  const [showFallback, setShowFallback] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   const fetchRide = useCallback(async () => {
@@ -94,6 +98,22 @@ export default function RideTrackingScreen() {
     }
   }, [rideId, fetchRide]);
 
+  useEffect(() => {
+    if (ride?.status !== 'REQUESTED') {
+      setWaitMinutes(0);
+      setShowFallback(false);
+      return;
+    }
+    const interval = setInterval(() => {
+      setWaitMinutes((prev) => {
+        const next = prev + 1;
+        if (next >= 3) setShowFallback(true);
+        return next;
+      });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [ride?.status]);
+
   const statusLine = useMemo(() => {
     if (!ride) return '';
     switch (ride.status) {
@@ -114,10 +134,11 @@ export default function RideTrackingScreen() {
   }, [ride, isCarpool]);
 
   const cancelRide = useCallback(async () => {
-    if (!rideId) return;
+    const id = typeof rideId === 'string' ? rideId : rideId?.[0];
+    if (!id) return;
     try {
       const headers = await getAuthHeaders();
-      await fetch(`${API_V1_BASE}/mobility/rides/${rideId}/cancel`, {
+      await fetch(`${API_V1_BASE}/mobility/rides/${id}/cancel`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ reason: 'Cancelled by rider' }),
@@ -164,6 +185,10 @@ export default function RideTrackingScreen() {
   const carpoolDriverMatched =
     isCarpool && ride.status !== 'REQUESTED' && Boolean(ride.driver_name);
 
+  const rideIdStr = typeof rideId === 'string' ? rideId : rideId?.[0];
+  const showNoDriverUi =
+    Boolean(ride) && (showFallback || ride.status === 'NO_DRIVER_FOUND');
+
   return (
     <View style={{ flex: 1, backgroundColor: surface, paddingTop: insets.top }}>
       <View style={styles.topBar}>
@@ -186,7 +211,7 @@ export default function RideTrackingScreen() {
                 onPress: async () => {
                   try {
                     const headers = await getAuthHeaders();
-                    await fetch(`${API_V1_BASE}/mobility/rides/${rideId}/dispute`, {
+                    await fetch(`${API_V1_BASE}/mobility/rides/${rideIdStr}/dispute`, {
                       method: 'POST',
                       headers,
                       body: JSON.stringify({
@@ -208,6 +233,22 @@ export default function RideTrackingScreen() {
         </TouchableOpacity>
       </View>
 
+      {showNoDriverUi ? (
+        <NoDriverFallback
+          rideId={rideIdStr}
+          pickupLat={Number(ride.pickup_lat)}
+          pickupLng={Number(ride.pickup_lng)}
+          pickupAddress={ride.pickup_address}
+          dropoffLat={Number(ride.dropoff_lat)}
+          dropoffLng={Number(ride.dropoff_lng)}
+          dropoffAddress={ride.dropoff_address}
+          estimatedMiles={Number(ride.estimated_miles) || 2}
+          waitMinutes={waitMinutes}
+          onScheduleChosen={() => setShowFallback(false)}
+        />
+      ) : null}
+
+      {!showNoDriverUi ? (
       <View style={styles.mapWrap}>
         {MAPBOX_TOKEN ? (
           <MapboxMap
@@ -315,6 +356,7 @@ export default function RideTrackingScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+      ) : null}
     </View>
   );
 }

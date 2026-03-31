@@ -66,7 +66,7 @@ export async function findNearestDriver(
       AND dp.status = 'APPROVED'
       AND dp.work_auth_expiry > CURRENT_DATE
       AND dp.license_expiry > CURRENT_DATE
-      AND dp.insurance_expiry > CURRENT_DATE
+      AND (dp.insurance_expiry IS NULL OR dp.insurance_expiry > CURRENT_DATE)
       AND ST_DWithin(
         dl.location,
         ST_SetSRID(ST_MakePoint($2::double precision, $1::double precision), 4326)::geography,
@@ -82,7 +82,7 @@ export async function findNearestDriver(
   return result.rows[0] ?? null;
 }
 
-async function sendExpoPushForDriverRideRequest(
+export async function sendExpoPushForDriverRideRequest(
   driverId: string,
   p: {
     rideId: string;
@@ -126,6 +126,202 @@ async function sendExpoPushForDriverRideRequest(
   } catch (err) {
     logger.warn({ err }, 'Push notification failed');
   }
+}
+
+async function sendExpoPushToStudent(
+  studentId: string,
+  title: string,
+  body: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const pushRow = await queryOne<{ expo_token: string }>(
+      `SELECT expo_token FROM student_push_tokens
+       WHERE student_id=$1 AND is_active=TRUE
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [studentId],
+    );
+    if (!pushRow?.expo_token) return;
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: pushRow.expo_token,
+        title,
+        body,
+        data,
+        sound: 'default',
+      }),
+    });
+  } catch (err) {
+    logger.warn({ err, studentId }, 'Student push failed');
+  }
+}
+
+export async function requestScheduledRide(params: {
+  riderStudentId: string;
+  pickupLat: number;
+  pickupLng: number;
+  pickupAddress: string;
+  dropoffLat: number;
+  dropoffLng: number;
+  dropoffAddress: string;
+  estimatedMiles: number;
+  scheduledFor: Date;
+  rideType: 'PRIORITY' | 'CARPOOL';
+}): Promise<{ rideId: string; scheduledFor: string }> {
+  const fare =
+    params.rideType === 'CARPOOL'
+      ? {
+          pricePerMileCents: 60,
+          estimatedFareCents: Math.round(params.estimatedMiles * 60),
+          platformFeeCents: Math.round(params.estimatedMiles * 6),
+          driverPayoutCents: Math.round(params.estimatedMiles * 54),
+        }
+      : calculateFare(params.estimatedMiles);
+
+  const maxPassengers = params.rideType === 'CARPOOL' ? 4 : 1;
+
+  const ride = await queryOne<{ id: string }>(
+    `
+    INSERT INTO rides (
+      rider_student_id, ride_type,
+      max_passengers, current_passengers,
+      pickup_lat, pickup_lng, pickup_address,
+      dropoff_lat, dropoff_lng, dropoff_address,
+      estimated_miles, price_per_mile_cents,
+      estimated_fare_cents, platform_fee_cents,
+      driver_payout_cents, status,
+      is_scheduled, scheduled_for
+    ) VALUES (
+      $1, $2, $3, 1, $4, $5, $6, $7, $8, $9,
+      $10, $11, $12, $13,
+      'REQUESTED', TRUE, $14
+    )
+    RETURNING id
+  `,
+    [
+      params.riderStudentId,
+      params.rideType,
+      maxPassengers,
+      params.pickupLat,
+      params.pickupLng,
+      params.pickupAddress,
+      params.dropoffLat,
+      params.dropoffLng,
+      params.dropoffAddress,
+      params.estimatedMiles,
+      fare.pricePerMileCents,
+      fare.estimatedFareCents,
+      fare.platformFeeCents,
+      fare.driverPayoutCents,
+      params.scheduledFor.toISOString(),
+    ],
+  );
+
+  await query(
+    `INSERT INTO ride_audit_log (ride_id, event, actor, data) VALUES ($1, 'RIDE_SCHEDULED', $2, $3::jsonb)`,
+    [
+      ride!.id,
+      params.riderStudentId,
+      JSON.stringify({ scheduledFor: params.scheduledFor.toISOString(), rideType: params.rideType }),
+    ],
+  );
+
+  return { rideId: ride!.id, scheduledFor: params.scheduledFor.toISOString() };
+}
+
+export async function activateScheduledRides(): Promise<void> {
+  const scheduledRes = await query(
+    `
+    SELECT * FROM rides
+    WHERE is_scheduled = TRUE
+      AND status = 'REQUESTED'
+      AND driver_id IS NULL
+      AND scheduled_for <= NOW() + INTERVAL '15 minutes'
+      AND scheduled_for >= NOW() - INTERVAL '45 minutes'
+  `,
+  );
+
+  for (const ride of scheduledRes.rows as Record<string, unknown>[]) {
+    const id = ride.id as string;
+    const pickupLat = Number(ride.pickup_lat);
+    const pickupLng = Number(ride.pickup_lng);
+
+    const driver = await findNearestDriver(pickupLat, pickupLng);
+
+    if (driver) {
+      const updated = await query(
+        `
+        UPDATE rides SET driver_id=$1, status='MATCHED', matched_at=NOW()
+        WHERE id=$2 AND status='REQUESTED' AND driver_id IS NULL
+        RETURNING id
+      `,
+        [driver.id as string, id],
+      );
+      if ((updated.rowCount ?? 0) === 0) continue;
+
+      await sendExpoPushForDriverRideRequest(driver.id as string, {
+        rideId: id,
+        pickupAddress: ride.pickup_address as string,
+        dropoffAddress: ride.dropoff_address as string,
+        estimatedMiles: Number(ride.estimated_miles),
+        fareCents: Number(ride.estimated_fare_cents),
+        driverPayoutCents: Number(ride.driver_payout_cents),
+        rideType: (ride.ride_type as string) ?? 'PRIORITY',
+      });
+
+      const riderId = ride.rider_student_id as string;
+      await sendExpoPushToStudent(
+        riderId,
+        '🚗 Driver confirmed!',
+        'Your scheduled ride is confirmed. Driver arrives in ~15 min.',
+        { type: 'DRIVER_MATCHED', rideId: id },
+      );
+
+      await query(`UPDATE rides SET scheduled_no_driver_notified=FALSE WHERE id=$1`, [id]);
+    } else {
+      const notified = Boolean(ride.scheduled_no_driver_notified);
+      if (notified) continue;
+      const riderId = ride.rider_student_id as string;
+      await sendExpoPushToStudent(
+        riderId,
+        '⚠️ Finding your driver',
+        `Still looking for a driver for your ${new Date(String(ride.scheduled_for)).toLocaleTimeString()} ride.`,
+        { type: 'DRIVER_SEARCHING', rideId: id },
+      );
+      await query(`UPDATE rides SET scheduled_no_driver_notified=TRUE WHERE id=$1`, [id]);
+    }
+  }
+}
+
+export async function expireUnmatchedRides(): Promise<void> {
+  const expired = await query(
+    `
+    UPDATE rides
+    SET status='NO_DRIVER_FOUND'
+    WHERE status='REQUESTED'
+      AND driver_id IS NULL
+      AND (
+        (COALESCE(is_scheduled, FALSE) = FALSE AND requested_at < NOW() - INTERVAL '12 minutes')
+        OR (COALESCE(is_scheduled, FALSE) = TRUE AND scheduled_for < NOW() - INTERVAL '30 minutes')
+      )
+    RETURNING id
+  `,
+  );
+
+  for (const row of expired.rows as { id: string }[]) {
+    await query(
+      `INSERT INTO ride_audit_log (ride_id, event, actor, data) VALUES ($1, 'NO_DRIVER_FOUND', 'SYSTEM', '{}'::jsonb)`,
+      [row.id],
+    );
+  }
+}
+
+export async function runRideMaintenanceTick(): Promise<void> {
+  await expireUnmatchedRides();
+  await activateScheduledRides();
 }
 
 export async function requestPriorityRide(params: {
@@ -496,6 +692,27 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
 
     await client.query('COMMIT');
     committed = true;
+
+    try {
+      const { processReferralForDriverFirstRide } = await import(
+        '../../compliance-service/src/referral.service'
+      );
+      const completedCount = await queryOne<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM rides WHERE driver_id=$1 AND status='COMPLETED'`,
+        [driverId],
+      );
+      if (Number.parseInt(completedCount?.c ?? '0', 10) === 1) {
+        const prof = await queryOne<{ referred_by_invite_code: string | null }>(
+          `SELECT referred_by_invite_code FROM driver_profiles WHERE id=$1`,
+          [driverId],
+        );
+        if (prof?.referred_by_invite_code) {
+          await processReferralForDriverFirstRide(driverStudentId, prof.referred_by_invite_code);
+        }
+      }
+    } catch (refErr) {
+      logger.error({ err: refErr, rideId }, 'Referral completion failed');
+    }
 
     try {
       const { recordRideFee } = await import('../../compliance-service/src/revenue.service');

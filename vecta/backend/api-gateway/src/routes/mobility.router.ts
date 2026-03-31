@@ -27,6 +27,7 @@ import {
   startRide,
   completeRide,
   requestPriorityRide,
+  requestScheduledRide,
   calculateFare,
 } from '../../../services/mobility-service/src/ride-matching.service';
 import {
@@ -417,6 +418,103 @@ router.get('/rides/estimate', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/rides/schedule', async (req: Request, res: Response) => {
+  try {
+    const {
+      pickupLat,
+      pickupLng,
+      pickupAddress,
+      dropoffLat,
+      dropoffLng,
+      dropoffAddress,
+      estimatedMiles,
+      scheduledFor,
+      rideType,
+    } = z
+      .object({
+        pickupLat: z.number(),
+        pickupLng: z.number(),
+        pickupAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        dropoffLat: z.number(),
+        dropoffLng: z.number(),
+        dropoffAddress: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        estimatedMiles: z.number().positive().max(500),
+        scheduledFor: z.string(),
+        rideType: z.enum(['PRIORITY', 'CARPOOL']).optional(),
+      })
+      .parse(req.body);
+
+    const scheduledDate = new Date(scheduledFor);
+    const now = new Date();
+    const minAdvance = new Date(now.getTime() + 30 * 60 * 1000);
+    const maxAdvance = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    if (scheduledDate < minAdvance) {
+      res.status(400).json({
+        error: 'SCHEDULE_TOO_SOON',
+        message: 'Scheduled rides must be at least 30 minutes in advance.',
+      });
+      return;
+    }
+
+    if (scheduledDate > maxAdvance) {
+      res.status(400).json({
+        error: 'SCHEDULE_TOO_FAR',
+        message: 'Scheduled rides can only be booked up to 24 hours in advance.',
+      });
+      return;
+    }
+
+    const result = await requestScheduledRide({
+      riderStudentId: req.vectaUser!.sub,
+      pickupLat,
+      pickupLng,
+      pickupAddress,
+      dropoffLat,
+      dropoffLng,
+      dropoffAddress,
+      estimatedMiles,
+      scheduledFor: scheduledDate,
+      rideType: rideType ?? 'PRIORITY',
+    });
+
+    res.status(201).json({
+      ...result,
+      message: `Ride scheduled for ${scheduledDate.toLocaleTimeString()}. We will match a driver 15 minutes before pickup.`,
+    });
+  } catch (err) {
+    logger.error({ err }, 'Schedule ride failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY', details: err.flatten() });
+      return;
+    }
+    res.status(500).json({ error: 'SCHEDULE_FAILED' });
+  }
+});
+
+router.get('/rides/scheduled', async (req: Request, res: Response) => {
+  try {
+    const rides = await query(
+      `
+      SELECT id, pickup_address, dropoff_address,
+             scheduled_for, status, ride_type,
+             estimated_fare_cents, driver_id
+      FROM rides
+      WHERE rider_student_id=$1
+        AND is_scheduled=TRUE
+        AND scheduled_for > NOW()
+        AND status NOT IN ('CANCELLED','COMPLETED','NO_DRIVER_FOUND')
+      ORDER BY scheduled_for ASC
+    `,
+      [req.vectaUser!.sub],
+    );
+    res.json({ scheduled: rides.rows });
+  } catch (err) {
+    logger.error({ err }, 'rides/scheduled failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
 router.post('/rides/request/priority', async (req: Request, res: Response) => {
   try {
     const body = z
@@ -778,6 +876,7 @@ router.post('/driver/apply', async (req: Request, res: Response) => {
         vehicleColor: z.string().min(1).max(40).transform((v) => stripFreeText(v)),
         vehiclePlate: z.string().min(1).max(20).transform((v) => stripFreeText(v)),
         vehicleCapacity: z.number().int().min(2).max(7),
+        driverReferralInviteCode: z.string().trim().min(4).max(16).optional(),
       })
       .parse(req.body);
 
@@ -797,6 +896,7 @@ router.post('/driver/apply', async (req: Request, res: Response) => {
       vehicleColor: body.vehicleColor,
       vehiclePlate: body.vehiclePlate,
       vehicleCapacity: body.vehicleCapacity,
+      driverReferralInviteCode: body.driverReferralInviteCode,
     });
     res.status(201).json(result);
   } catch (err) {

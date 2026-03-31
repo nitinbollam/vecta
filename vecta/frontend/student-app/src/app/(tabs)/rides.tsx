@@ -11,6 +11,7 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
@@ -38,6 +39,17 @@ type RideRow = {
   estimated_fare_cents: number | null;
 };
 
+type ScheduledRideRow = {
+  id: string;
+  pickup_address: string;
+  dropoff_address: string;
+  scheduled_for: string;
+  status: string;
+  ride_type: string;
+  estimated_fare_cents: number | null;
+  driver_id: string | null;
+};
+
 export default function RidesScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -46,6 +58,7 @@ export default function RidesScreen() {
   const [nearbyCount, setNearbyCount] = useState<number | null>(null);
   const [rides, setRides] = useState<RideRow[]>([]);
   const [activeRide, setActiveRide] = useState<RideRow | null>(null);
+  const [scheduledRides, setScheduledRides] = useState<ScheduledRideRow[]>([]);
   const [locError, setLocError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -58,6 +71,14 @@ export default function RidesScreen() {
         const list = data.rides ?? [];
         setRides(list);
         setActiveRide(list.find((r) => ACTIVE.has(r.status)) ?? null);
+      }
+
+      const scheduledRes = await fetch(`${API_V1_BASE}/mobility/rides/scheduled`, { headers });
+      if (scheduledRes.ok) {
+        const d = (await scheduledRes.json()) as { scheduled: ScheduledRideRow[] };
+        setScheduledRides(d.scheduled ?? []);
+      } else {
+        setScheduledRides([]);
       }
 
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -135,7 +156,7 @@ export default function RidesScreen() {
               <Text style={[styles.compareLine, { color: colors.text }]}>
                 Vecta Rides: $0.75–$1.50/mile
               </Text>
-              <Text style={[styles.compareMuted, { color: sub }]}>Uber/Lyft: $2.20+/mile</Text>
+              <Text style={[styles.compareMuted, { color: sub }]}>Peer drivers keep 90% of the fare.</Text>
             </View>
 
             <TouchableOpacity
@@ -145,6 +166,72 @@ export default function RidesScreen() {
             >
               <Text style={styles.bookBtnText}>Book a Ride</Text>
             </TouchableOpacity>
+
+            {scheduledRides.length > 0 ? (
+              <View style={styles.scheduledSection}>
+                <Text style={[styles.sectionLabel, { color: colors.text }]}>📅 Scheduled rides</Text>
+                {scheduledRides.map((r) => (
+                  <View
+                    key={r.id}
+                    style={[
+                      styles.scheduledCard,
+                      { borderColor: colors.border, backgroundColor: isDark ? '#152238' : VectaColors.surface1 },
+                    ]}
+                  >
+                    <View style={styles.scheduledLeft}>
+                      <Text style={[styles.scheduledTime, { color: VectaColors.accent }]}>
+                        {new Date(r.scheduled_for).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                      <Text style={[styles.scheduledDate, { color: sub }]}>
+                        {new Date(r.scheduled_for).toLocaleDateString([], {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                    </View>
+                    <View style={styles.scheduledMiddle}>
+                      <Text style={[styles.scheduledRoute, { color: colors.text }]} numberOfLines={1}>
+                        → {r.dropoff_address}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.scheduledStatus,
+                          { color: r.driver_id ? VectaColors.success : sub },
+                        ]}
+                      >
+                        {r.driver_id ? '✓ Driver confirmed' : '⏳ Finding driver...'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('Cancel scheduled ride?', '', [
+                          { text: 'Keep', style: 'cancel' },
+                          {
+                            text: 'Cancel Ride',
+                            style: 'destructive',
+                            onPress: async () => {
+                              const h = await getAuthHeaders();
+                              await fetch(`${API_V1_BASE}/mobility/rides/${r.id}/cancel`, {
+                                method: 'POST',
+                                headers: h,
+                                body: JSON.stringify({ reason: 'Cancelled by student' }),
+                              });
+                              void load();
+                            },
+                          },
+                        ]);
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={22} color={sub} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             <Text style={[styles.nearby, { color: sub }]}>
               {nearbyCount === null
@@ -235,6 +322,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bookBtnText: { fontFamily: VectaFonts.bold, fontSize: 17, color: VectaColors.primary },
+  scheduledSection: { marginTop: 20 },
+  scheduledCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+    marginTop: 10,
+    gap: 8,
+  },
+  scheduledLeft: { width: 72 },
+  scheduledTime: { fontFamily: VectaFonts.semiBold, fontSize: 15 },
+  scheduledDate: { fontFamily: VectaFonts.regular, fontSize: 11, marginTop: 2 },
+  scheduledMiddle: { flex: 1 },
+  scheduledRoute: { fontFamily: VectaFonts.medium, fontSize: 14 },
+  scheduledStatus: { fontFamily: VectaFonts.regular, fontSize: 12, marginTop: 4 },
   nearby: { fontFamily: VectaFonts.regular, fontSize: 14, marginTop: 14, textAlign: 'center' },
   sectionLabel: { fontFamily: VectaFonts.semiBold, fontSize: 16, marginTop: 28 },
   empty: { fontFamily: VectaFonts.regular, fontSize: 14, marginTop: 8 },

@@ -432,6 +432,19 @@ async function bootstrap() {
       "API Gateway started",
     );
     console.log(`Server running on port ${PORT}`);
+
+    setInterval(() => {
+      void (async () => {
+        try {
+          const { runRideMaintenanceTick } = await import(
+            "../../services/mobility-service/src/ride-matching.service"
+          );
+          await runRideMaintenanceTick();
+        } catch (err) {
+          logger.error({ err }, "Ride maintenance failed");
+        }
+      })();
+    }, 60_000);
   });
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
