@@ -46,6 +46,8 @@ import { authMiddleware, requireKYC, requirePermission } from '@vecta/auth';
 import { createLogger, logComplianceEvent } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
 import { stripFreeText } from '../lib/sanitize';
+import { fileTicket } from '../../../services/compliance-service/src/dispute.service';
+import { VectaUnderwritingEngine } from '../../../services/compliance-service/src/vecta-underwriting.service';
 
 const logger = createLogger('mobility-router');
 const router = Router();
@@ -591,6 +593,105 @@ router.post('/carpool/stop/:stopId/dropoff', async (req: Request, res: Response)
   }
 });
 
+router.post('/rides/:rideId/dispute', async (req: Request, res: Response) => {
+  try {
+    const { category, description, evidenceUrls } = z
+      .object({
+        category: z.string().max(64).optional(),
+        description: z.string().min(1).max(2000).transform((v) => stripFreeText(v)),
+        evidenceUrls: z.array(z.string().url()).optional(),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+
+    const result = await fileTicket({
+      category: category ?? 'RIDE_DISPUTE',
+      description,
+      filedByStudentId: studentId,
+      rideId: req.params.rideId,
+      evidenceUrls: evidenceUrls ?? [],
+    });
+
+    res.status(201).json({
+      ...result,
+      message: `Your dispute has been filed. Reference: ${result.ticketNumber}. We will respond within 24 hours.`,
+    });
+  } catch (err) {
+    logger.error({ err }, 'ride dispute failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(500).json({ error: 'DISPUTE_FAILED' });
+  }
+});
+
+router.post('/rides/:rideId/report-driver', async (req: Request, res: Response) => {
+  try {
+    const { reason, description } = z
+      .object({
+        reason: z.string().min(1).max(200).transform((v) => stripFreeText(v)),
+        description: z.string().min(1).max(2000).transform((v) => stripFreeText(v)),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+
+    const result = await fileTicket({
+      category: 'DRIVER_REPORT',
+      description: `${reason}: ${description}`,
+      filedByStudentId: studentId,
+      rideId: req.params.rideId,
+    });
+
+    res.status(201).json({
+      ...result,
+      message: 'Driver report received. This is treated as high priority.',
+    });
+  } catch (err) {
+    logger.error({ err }, 'report driver failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(500).json({ error: 'REPORT_FAILED' });
+  }
+});
+
+router.post('/rides/:rideId/report-rider', async (req: Request, res: Response) => {
+  try {
+    const { reason, description } = z
+      .object({
+        reason: z.string().min(1).max(200).transform((v) => stripFreeText(v)),
+        description: z.string().min(1).max(2000).transform((v) => stripFreeText(v)),
+      })
+      .parse(req.body);
+
+    const driver = await queryOne<{ id: string }>('SELECT id FROM driver_profiles WHERE student_id=$1', [
+      req.vectaUser!.sub,
+    ]);
+    if (!driver) {
+      res.status(403).json({ error: 'NOT_A_DRIVER' });
+      return;
+    }
+
+    const result = await fileTicket({
+      category: 'RIDER_REPORT',
+      description: `${reason}: ${description}`,
+      filedByDriverId: driver.id,
+      rideId: req.params.rideId,
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    logger.error({ err }, 'report rider failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(500).json({ error: 'REPORT_FAILED' });
+  }
+});
+
 router.get('/rides/:rideId', async (req: Request, res: Response) => {
   try {
     const ride = await queryOne(
@@ -669,8 +770,8 @@ router.post('/driver/apply', async (req: Request, res: Response) => {
         licenseState: z.string().min(2).max(8).transform((v) => stripFreeText(v)),
         licenseExpiry: z.string(),
         licenseDocUrl: z.string().url(),
-        insuranceDocUrl: z.string().url(),
-        insuranceExpiry: z.string(),
+        insuranceDocUrl: z.string().url().optional().nullable(),
+        insuranceExpiry: z.string().optional().nullable(),
         vehicleMake: z.string().min(1).max(50).transform((v) => stripFreeText(v)),
         vehicleModel: z.string().min(1).max(50).transform((v) => stripFreeText(v)),
         vehicleYear: z.number().int().min(1990).max(new Date().getFullYear() + 1),
@@ -688,8 +789,8 @@ router.post('/driver/apply', async (req: Request, res: Response) => {
       licenseState: body.licenseState,
       licenseExpiry: body.licenseExpiry,
       licenseDocUrl: body.licenseDocUrl,
-      insuranceDocUrl: body.insuranceDocUrl,
-      insuranceExpiry: body.insuranceExpiry,
+      insuranceDocUrl: body.insuranceDocUrl ?? undefined,
+      insuranceExpiry: body.insuranceExpiry ?? undefined,
       vehicleMake: body.vehicleMake,
       vehicleModel: body.vehicleModel,
       vehicleYear: body.vehicleYear,
@@ -931,6 +1032,74 @@ router.get('/driver/earnings', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'driver earnings failed');
     res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.get('/driver/applications', async (req: Request, res: Response) => {
+  try {
+    const applications = await query(
+      `
+      SELECT dp.*, s.legal_name AS full_name, s.verified_email AS email,
+             s.kyc_status, s.university_name
+      FROM driver_profiles dp
+      JOIN students s ON s.id = dp.student_id
+      WHERE dp.status = 'PENDING_REVIEW'
+      ORDER BY dp.created_at ASC
+    `,
+    );
+    res.json({ applications: applications.rows });
+  } catch (err) {
+    logger.error({ err }, 'driver applications failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.patch('/driver/:driverId/approve', async (req: Request, res: Response) => {
+  try {
+    const { driverId } = z.object({ driverId: z.string().uuid() }).parse(req.params);
+
+    await query(`UPDATE driver_profiles SET status='APPROVED' WHERE id=$1`, [driverId]);
+
+    try {
+      const underwriting = new VectaUnderwritingEngine();
+      const policy = await underwriting.bindTNCPolicy(driverId);
+      await query(
+        `
+        UPDATE driver_profiles
+        SET tnc_policy_id=$1, tnc_policy_number=$2, tnc_policy_status='ACTIVE'
+        WHERE id=$3
+      `,
+        [policy.policyId, policy.policyNumber, driverId],
+      );
+    } catch (e) {
+      logger.warn({ driverId, err: e }, 'TNC policy bind failed — approve without policy');
+    }
+
+    res.json({ approved: true });
+  } catch (err) {
+    logger.error({ err }, 'driver approve failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_PARAMS' });
+      return;
+    }
+    res.status(500).json({ error: 'APPROVE_FAILED' });
+  }
+});
+
+router.patch('/driver/:driverId/reject', async (req: Request, res: Response) => {
+  try {
+    const { driverId } = z.object({ driverId: z.string().uuid() }).parse(req.params);
+    z.object({ reason: z.string().max(500).transform((v) => stripFreeText(v)).optional() }).parse(req.body ?? {});
+
+    await query(`UPDATE driver_profiles SET status='REJECTED' WHERE id=$1`, [driverId]);
+    res.json({ rejected: true });
+  } catch (err) {
+    logger.error({ err }, 'driver reject failed');
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    res.status(500).json({ error: 'REJECT_FAILED' });
   }
 });
 

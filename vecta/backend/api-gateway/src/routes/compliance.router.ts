@@ -37,6 +37,8 @@ import {
   recordAcceptance,
 } from '../../../services/compliance-service/src/landlord-credibility.service';
 import { stripFreeText } from '../lib/sanitize';
+import { fileTicket, processRefund, flagAccount } from '../../../services/compliance-service/src/dispute.service';
+import { PLATFORM_ACCOUNT_ID } from '../../../services/compliance-service/src/revenue.service';
 
 const logger = createLogger('compliance-router');
 const router = Router();
@@ -329,6 +331,166 @@ router.get('/reputation/score', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'Reputation score fetch failed');
     res.status(500).json({ error: 'REPUTATION_SCORE_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Internal admin — revenue, tickets, flags (JWT-authenticated; tighten with RBAC in prod)
+// ---------------------------------------------------------------------------
+
+router.get('/admin/tickets', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const tickets = await query(
+      `
+      SELECT st.*,
+             COALESCE(s.legal_name, s.verified_email) AS student_name,
+             s.verified_email AS student_email,
+             r.pickup_address, r.dropoff_address,
+             r.actual_fare_cents
+      FROM support_tickets st
+      LEFT JOIN students s ON s.id = st.filed_by_student_id
+      LEFT JOIN rides r ON r.id = st.ride_id
+      WHERE st.status IN ('OPEN','IN_REVIEW','ESCALATED')
+      ORDER BY
+        CASE st.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2
+          WHEN 'NORMAL' THEN 3 ELSE 4 END,
+        st.created_at ASC
+      LIMIT 100
+    `,
+    );
+    res.json({ tickets: tickets.rows });
+  } catch (err) {
+    logger.error({ err }, 'admin tickets failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.post('/admin/tickets/:ticketId/refund', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const { amountCents, reason } = z
+      .object({
+        amountCents: z.number().int().positive(),
+        reason: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+      })
+      .parse(req.body);
+    const adminId = req.vectaUser.sub;
+
+    const ticket = await queryOne<{
+      id: string;
+      filed_by_student_id: string | null;
+      ride_id: string | null;
+    }>('SELECT id, filed_by_student_id, ride_id FROM support_tickets WHERE id=$1', [req.params.ticketId]);
+
+    if (!ticket) {
+      res.status(404).json({ error: 'TICKET_NOT_FOUND' });
+      return;
+    }
+    if (!ticket.filed_by_student_id) {
+      res.status(400).json({ error: 'NO_STUDENT_ON_TICKET' });
+      return;
+    }
+
+    await processRefund({
+      ticketId: req.params.ticketId,
+      studentId: ticket.filed_by_student_id,
+      rideId: ticket.ride_id,
+      amountCents,
+      reason,
+      approvedBy: adminId,
+    });
+
+    res.json({
+      success: true,
+      message: `Refund of $${(amountCents / 100).toFixed(2)} processed.`,
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, 'admin refund failed');
+    res.status(500).json({ error: 'REFUND_FAILED' });
+  }
+});
+
+router.post('/admin/flag', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const { studentId, driverId, flagType, reason, expiresAt } = z
+      .object({
+        studentId: z.string().uuid().optional(),
+        driverId: z.string().uuid().optional(),
+        flagType: z.string().min(1).max(32),
+        reason: z.string().min(1).max(500).transform((v) => stripFreeText(v)),
+        expiresAt: z.string().optional(),
+      })
+      .parse(req.body);
+    const adminId = req.vectaUser.sub;
+
+    await flagAccount({
+      studentId,
+      driverId,
+      flagType,
+      reason,
+      flaggedBy: adminId,
+      expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, 'admin flag failed');
+    res.status(500).json({ error: 'FLAG_FAILED' });
+  }
+});
+
+router.get('/admin/revenue', async (req: Request, res: Response) => {
+  try {
+    if (!req.vectaUser?.sub) {
+      res.status(401).json({ error: 'UNAUTHORIZED' });
+      return;
+    }
+    const revenue = await query(
+      `
+      SELECT
+        event_type,
+        COUNT(*)::int AS count,
+        SUM(amount_cents)::int AS total_cents,
+        DATE_TRUNC('day', created_at) AS day
+      FROM revenue_events
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY event_type, DATE_TRUNC('day', created_at)
+      ORDER BY day DESC, total_cents DESC
+    `,
+    );
+
+    const platformBalance = await queryOne<{ balance: string }>(
+      `SELECT COALESCE(MAX(balance_after_cents), 0)::text AS balance
+       FROM ledger_entries WHERE account_id=$1`,
+      [PLATFORM_ACCOUNT_ID],
+    );
+
+    res.json({
+      events: revenue.rows,
+      platformBalance: platformBalance?.balance ?? '0',
+    });
+  } catch (err) {
+    logger.error({ err }, 'admin revenue failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
   }
 });
 

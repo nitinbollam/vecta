@@ -308,6 +308,227 @@ router.post('/escrow/:escrowId/refund', authMiddleware, requireKYC, async (req: 
   }
 });
 
+// ---------------------------------------------------------------------------
+// Vecta Connect — international account funding
+// ---------------------------------------------------------------------------
+
+router.post('/fund/india', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { amountCents, upiId, vpaName } = z
+      .object({
+        amountCents: z.number().int().min(100),
+        upiId: z.string().min(3).max(128),
+        vpaName: z.string().max(120).optional(),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+    const { VectaConnect } = await import('../../../services/banking-service/src/vecta-connect.service');
+    const connect = new VectaConnect();
+    const result = await connect.initiateIndianFunding({
+      studentId,
+      amountCents,
+      upiId,
+      vpaName: vpaName ?? 'Vecta',
+    });
+    res.json({
+      transactionId: result.transactionId,
+      deeplink: result.deeplink,
+      instructions: 'Open PhonePe, GPay, or Paytm and approve the payment request.',
+      note: 'Funds will appear in your Vecta account within 2 minutes.',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, '[Banking] India fund failed');
+    res.status(500).json({ error: 'FUNDING_FAILED' });
+  }
+});
+
+router.post('/fund/uk', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { amountCents, sortCode, accountNumber } = z
+      .object({
+        amountCents: z.number().int().min(100),
+        sortCode: z.string().min(6).max(12),
+        accountNumber: z.string().min(4).max(20),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+    const { VectaConnect } = await import('../../../services/banking-service/src/vecta-connect.service');
+    const connect = new VectaConnect();
+    const result = await connect.initiateUKFunding({
+      studentId,
+      amountCents,
+      bankCode: sortCode,
+      accountNumber,
+      sortCode,
+    });
+    res.json({
+      paymentId: result.paymentId,
+      redirectUrl: result.redirectUrl,
+      instructions: 'You will be redirected to your UK bank to approve the transfer.',
+      note: 'Funds arrive via Faster Payments in under 2 hours.',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, '[Banking] UK fund failed');
+    res.status(500).json({ error: 'FUNDING_FAILED' });
+  }
+});
+
+router.post('/fund/eu', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { amountCents, iban, bic } = z
+      .object({
+        amountCents: z.number().int().min(100),
+        iban: z.string().min(15).max(34),
+        bic: z.string().min(8).max(11),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+    const { VectaConnect } = await import('../../../services/banking-service/src/vecta-connect.service');
+    const connect = new VectaConnect();
+    const result = await connect.initiateEUFunding({ studentId, amountCents, iban, bic });
+    res.json({
+      paymentId: result.paymentId,
+      redirectUrl: result.redirectUrl,
+      instructions: 'You will be redirected to your EU bank to approve the SEPA transfer.',
+      note: 'Funds arrive within 1 business day.',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, '[Banking] EU fund failed');
+    res.status(500).json({ error: 'FUNDING_FAILED' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Subscriptions (Vecta Ledger billing)
+// ---------------------------------------------------------------------------
+
+router.post('/billing/subscribe', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { planId } = z.object({ planId: z.string().min(1).max(64) }).parse(req.body);
+    const studentId = req.vectaUser!.sub;
+
+    const existing = await queryOne<{ plan_id: string }>(
+      `SELECT plan_id FROM student_subscriptions
+       WHERE student_id=$1 AND status IN ('ACTIVE','TRIALING')`,
+      [studentId],
+    );
+
+    if (existing) {
+      res.status(409).json({ error: 'ALREADY_SUBSCRIBED', plan: existing.plan_id });
+      return;
+    }
+
+    await query(
+      `
+      INSERT INTO student_subscriptions
+        (student_id, plan_id, status, trial_ends_at)
+      VALUES ($1, $2, 'TRIALING', NOW() + INTERVAL '30 days')
+    `,
+      [studentId, planId],
+    );
+
+    res.json({
+      success: true,
+      trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      message: '30-day free trial started. No charge until trial ends.',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    logger.error({ err }, '[Banking] subscribe failed');
+    res.status(500).json({ error: 'SUBSCRIBE_FAILED' });
+  }
+});
+
+router.get('/billing/subscription', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const sub = await queryOne(
+      `
+      SELECT ss.*, sp.name, sp.price_cents, sp.features
+      FROM student_subscriptions ss
+      JOIN subscription_plans sp ON sp.id = ss.plan_id
+      WHERE ss.student_id=$1
+      ORDER BY ss.created_at DESC LIMIT 1
+    `,
+      [req.vectaUser!.sub],
+    );
+
+    if (!sub) {
+      res.json({ plan: 'student_basic', status: 'FREE', features: ['identity', 'esim', 'rides'] });
+      return;
+    }
+
+    res.json(sub);
+  } catch (err) {
+    logger.error({ err }, '[Banking] subscription fetch failed');
+    res.status(500).json({ error: 'FETCH_FAILED' });
+  }
+});
+
+router.post('/driver/payout', authMiddleware, requireKYC, async (req: Request, res: Response) => {
+  try {
+    const { amountCents, method } = z
+      .object({
+        amountCents: z.number().int().min(100),
+        method: z.enum(['ACH', 'INSTANT']).optional(),
+      })
+      .parse(req.body);
+    const studentId = req.vectaUser!.sub;
+
+    const driver = await queryOne<{ id: string }>(
+      "SELECT id FROM driver_profiles WHERE student_id=$1 AND status='APPROVED'",
+      [studentId],
+    );
+
+    if (!driver) {
+      res.status(403).json({ error: 'NOT_AN_APPROVED_DRIVER' });
+      return;
+    }
+
+    const { initiateDriverPayout } = await import(
+      '../../../services/compliance-service/src/revenue.service'
+    );
+
+    const result = await initiateDriverPayout({
+      driverId: driver.id,
+      studentId,
+      amountCents,
+      method: method ?? 'ACH',
+    });
+
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'INVALID_BODY' });
+      return;
+    }
+    if ((err as Error).message === 'INSUFFICIENT_BALANCE') {
+      res.status(402).json({ error: 'INSUFFICIENT_BALANCE' });
+      return;
+    }
+    if ((err as Error).message === 'NO_LEDGER_ACCOUNT') {
+      res.status(404).json({ error: 'NO_LEDGER_ACCOUNT' });
+      return;
+    }
+    logger.error({ err }, '[Banking] driver payout failed');
+    res.status(500).json({ error: 'PAYOUT_FAILED' });
+  }
+});
+
 router.post('/card/issue', authMiddleware, requireKYC, async (req: Request, res: Response) => {
   try {
     const studentId = req.vectaUser!.sub;

@@ -13,6 +13,7 @@
  */
 
 import type { Metadata } from 'next';
+import { AdminOpsPanel } from './AdminOpsPanel';
 
 export const metadata: Metadata = {
   title: 'Vecta Ops Dashboard',
@@ -208,6 +209,19 @@ export default async function AdminDashboard() {
               </table>
             </div>
           )}
+        </section>
+
+        {/* Revenue, tickets, driver queue */}
+        <section>
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+            Revenue &amp; Support Ops
+          </h2>
+          <p className="text-gray-600 text-xs mb-4">
+            Proxied via <code className="text-gray-500">/api/ops/*</code> using server{' '}
+            <code className="text-gray-500">VECTA_OPS_JWT</code> (staff JWT) +{' '}
+            <code className="text-gray-500">VECTA_INTERNAL_API_URL</code>.
+          </p>
+          <AdminOpsPanel />
         </section>
 
         {/* Platform stats */}

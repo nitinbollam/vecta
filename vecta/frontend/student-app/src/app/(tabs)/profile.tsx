@@ -18,6 +18,28 @@ import {
   VectaColors, VectaFonts, VectaSpacing, VectaRadius, VectaGradients,
 } from '../../constants/theme';
 import { VectaIDStatusBadge, VectaBadge } from '../../components/ui';
+import { API_V1_BASE } from '../../config/api';
+
+function useSubscriptionLabel() {
+  const token = useStudentStore((s) => s.authToken);
+  const [label, setLabel] = React.useState<string>('…');
+
+  React.useEffect(() => {
+    if (!token) {
+      setLabel('Basic');
+      return;
+    }
+    fetch(`${API_V1_BASE}/banking/billing/subscription`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d: { status?: string; name?: string; plan?: string }) => {
+        if (d.status === 'FREE') setLabel('Vecta Basic');
+        else setLabel(String(d.name ?? d.plan ?? 'Active'));
+      })
+      .catch(() => setLabel('Basic'));
+  }, [token]);
+
+  return label;
+}
 
 // ---------------------------------------------------------------------------
 // Mini Vecta ID card preview (tappable, shown above Platform Status)
@@ -423,6 +445,7 @@ export default function ProfileScreen() {
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [biometricsOn,    setBiometricsOn]    = useState(true);
   const [language,        setLanguage]        = useState('English');
+  const subscriptionLabel                   = useSubscriptionLabel();
 
   // Load persisted preferences from AsyncStorage on mount
   useEffect(() => {
@@ -517,6 +540,12 @@ export default function ProfileScreen() {
 
       {/* Account settings */}
       <SectionHeader title="Account" />
+      <SettingsRow
+        icon="pricetag"
+        label="Subscription"
+        value={subscriptionLabel}
+        onPress={() => router.push('/profile/subscription')}
+      />
       <SettingsRow
         icon="link"
         label="Sharing Links"

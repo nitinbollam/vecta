@@ -401,6 +401,180 @@ export class VectaConnect {
    * Generate a 90-day asset report from any connected bank.
    * Returns the same interface regardless of which connector was used.
    */
+  /**
+   * India: UPI payment initiation (Setu-style collect). Funds settle to Vecta pooled account;
+   * student Vecta Ledger is credited on webhook confirmation (separate flow).
+   */
+  async initiateIndianFunding(params: {
+    studentId: string;
+    amountCents: number;
+    upiId: string;
+    vpaName: string;
+  }): Promise<{ transactionId: string; deeplink: string }> {
+    const setuClientId = process.env.SETU_AA_CLIENT_ID;
+    const setuClientSecret = process.env.SETU_AA_CLIENT_SECRET;
+
+    if (!setuClientId || !setuClientSecret) {
+      return {
+        transactionId: `mock-upi-${Date.now()}`,
+        deeplink: `upi://pay?pa=vecta@upi&pn=Vecta&am=${(params.amountCents / 100).toFixed(2)}&cu=USD`,
+      };
+    }
+
+    const amountINR = await this.convertUSDtoINR(params.amountCents);
+
+    const res = await fetch('https://prod.setu.co/api/payment-links', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-client-id': setuClientId,
+        'x-client-secret': setuClientSecret,
+      },
+      body: JSON.stringify({
+        amount: { value: amountINR * 100, currencyCode: 'INR' },
+        billerBuyerApp: { mobileNumber: '' },
+        paymentLink: {
+          upiID: process.env.VECTA_UPI_ID ?? 'vecta@upi',
+          upiParams: {
+            tr: `VECTA-${params.studentId.slice(0, 8)}-${Date.now()}`,
+          },
+        },
+      }),
+    });
+
+    const data = (await res.json()) as {
+      data?: { paymentLink?: { upiID?: string; deeplink?: string } };
+    };
+    return {
+      transactionId: data.data?.paymentLink?.upiID ?? `txn-${Date.now()}`,
+      deeplink: data.data?.paymentLink?.deeplink ?? '',
+    };
+  }
+
+  /** UK: Faster Payments via TrueLayer (Vecta Connect). */
+  async initiateUKFunding(params: {
+    studentId: string;
+    amountCents: number;
+    bankCode: string;
+    accountNumber: string;
+    sortCode: string;
+  }): Promise<{ paymentId: string; redirectUrl: string }> {
+    const truelayerClientId = process.env.TRUELAYER_CLIENT_ID;
+
+    if (!truelayerClientId) {
+      return {
+        paymentId: `mock-uk-${Date.now()}`,
+        redirectUrl: 'https://pay.truelayer.com/mock',
+      };
+    }
+
+    const res = await fetch('https://payment.truelayer.com/payments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${await this.getTruelayerToken()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount_in_minor: params.amountCents,
+        currency: 'GBP',
+        payment_method: {
+          type: 'bank_transfer',
+          provider_id: 'mock-payments-gb-redirect',
+        },
+        beneficiary: {
+          type: 'merchant_account',
+          merchant_account_id: process.env.TRUELAYER_MERCHANT_ACCOUNT_ID,
+        },
+        user: {
+          id: params.studentId,
+          name: 'Vecta Student',
+        },
+        metadata: {
+          student_id: params.studentId,
+          purpose: 'ACCOUNT_FUNDING',
+        },
+      }),
+    });
+
+    const data = (await res.json()) as {
+      id?: string;
+      authorization_flow?: { actions?: { next?: { uri?: string } } };
+    };
+    return {
+      paymentId: data.id ?? `uk-${Date.now()}`,
+      redirectUrl: data.authorization_flow?.actions?.next?.uri ?? '',
+    };
+  }
+
+  /** EU: SEPA-style payment initiation (Salt Edge). */
+  async initiateEUFunding(params: {
+    studentId: string;
+    amountCents: number;
+    iban: string;
+    bic: string;
+  }): Promise<{ paymentId: string; redirectUrl: string }> {
+    const saltEdgeAppId = process.env.SALT_EDGE_APP_ID;
+
+    if (!saltEdgeAppId) {
+      return {
+        paymentId: `mock-eu-${Date.now()}`,
+        redirectUrl: 'https://www.saltedge.com/mock',
+      };
+    }
+
+    const res = await fetch('https://www.saltedge.com/api/v5/payments', {
+      method: 'POST',
+      headers: {
+        'App-id': saltEdgeAppId,
+        Secret: process.env.SALT_EDGE_SECRET ?? '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: {
+          customer_id: params.studentId,
+          amount: (params.amountCents / 100).toFixed(2),
+          currency_code: 'EUR',
+          description: 'Vecta account funding',
+          payee: {
+            iban: process.env.VECTA_EU_IBAN,
+            name: 'Vecta Financial Services',
+          },
+        },
+      }),
+    });
+
+    const data = (await res.json()) as { data?: { id?: string; connect_url?: string } };
+    return {
+      paymentId: data.data?.id ?? `txn-${Date.now()}`,
+      redirectUrl: data.data?.connect_url ?? '',
+    };
+  }
+
+  private async convertUSDtoINR(amountCents: number): Promise<number> {
+    const rate = Number.parseFloat(process.env.USD_INR_RATE ?? '83.5');
+    return Math.round((amountCents / 100) * rate);
+  }
+
+  private async getTruelayerToken(): Promise<string> {
+    const id = process.env.TRUELAYER_CLIENT_ID;
+    const secret = process.env.TRUELAYER_CLIENT_SECRET;
+    if (!id || !secret) {
+      return 'mock-truelayer-token';
+    }
+    const res = await fetch('https://auth.truelayer.com/connect/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: id,
+        client_secret: secret,
+        scope: 'payments',
+      }),
+    });
+    const data = (await res.json()) as { access_token?: string };
+    return data.access_token ?? 'mock-truelayer-token';
+  }
+
   async generateAssetReport(connectionId: string): Promise<AssetReport> {
     const connection = await queryOne(
       'SELECT * FROM plaid_connections WHERE id = $1',

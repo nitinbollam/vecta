@@ -496,6 +496,24 @@ export async function completeRide(driverId: string, rideId: string, actualMiles
 
     await client.query('COMMIT');
     committed = true;
+
+    try {
+      const { recordRideFee } = await import('../../compliance-service/src/revenue.service');
+      const meta = await queryOne<{ fleet_vehicle_id: string | null; rider_student_id: string }>(
+        `SELECT fleet_vehicle_id, rider_student_id FROM rides WHERE id=$1`,
+        [rideId],
+      );
+      if (meta) {
+        await recordRideFee({
+          rideId,
+          studentId: meta.rider_student_id,
+          fareCents: actualFareCents,
+          isFleetVehicle: Boolean(meta.fleet_vehicle_id),
+        });
+      }
+    } catch (revErr) {
+      logger.error({ err: revErr, rideId }, 'Revenue recording failed');
+    }
   } catch (err) {
     if (!committed) {
       await client.query('ROLLBACK').catch(() => undefined);

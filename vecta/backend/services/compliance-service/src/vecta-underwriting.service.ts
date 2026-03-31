@@ -313,6 +313,118 @@ export class VectaUnderwritingEngine {
     return CITY_RATE_MULTIPLIERS[key ?? 'DEFAULT'];
   }
 
+  /**
+   * RIDE_TNC — commercial TNC coverage via Vecta MGA + Boost paper carrier.
+   * Personal auto policies are not primary for on-platform rides.
+   */
+  async quoteTNCCoverage(driverId: string): Promise<{
+    periodOneCents: number;
+    periodTwoCents: number;
+    periodThreeCents: number;
+    perMileCents: number;
+    annualPremiumCents: number;
+  }> {
+    const driver = await this.getDriverProfile(driverId);
+    let perMileCents = 8;
+    const rating = Number(driver.rating ?? 5);
+    if (rating >= 4.8) perMileCents = 6;
+    if (rating < 4.0) perMileCents = 12;
+    const vy = Number(driver.vehicle_year ?? 2020);
+    if (vy < 2015) perMileCents += 2;
+
+    return {
+      periodOneCents: 0,
+      periodTwoCents: perMileCents,
+      periodThreeCents: perMileCents,
+      perMileCents,
+      annualPremiumCents: perMileCents * 12000,
+    };
+  }
+
+  async bindTNCPolicy(driverId: string): Promise<{
+    policyId: string;
+    policyNumber: string;
+    status: string;
+    cardUrl: string;
+  }> {
+    const quote = await this.quoteTNCCoverage(driverId);
+    const driver = await this.getDriverProfile(driverId);
+    const policyNumber = `VECTA-TNC-${new Date().getFullYear()}-${String(driverId).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    const monthlyPremiumCents = Math.round(quote.perMileCents * 1000);
+    const effective = new Date();
+    const expiry = new Date(effective);
+    expiry.setFullYear(expiry.getFullYear() + 1);
+
+    const row = await queryOne<{ id: string }>(
+      `
+      INSERT INTO insurance_policies (
+        student_id, policy_type, policy_number,
+        status, coverage_amount_cents, deductible_cents, liability_cents,
+        monthly_premium_cents, annual_premium_cents,
+        effective_date, expiry_date,
+        paper_provider, paper_policy_ref, underwriting_data, card_url
+      ) VALUES (
+        $1, 'AUTO_TNC', $2, 'ACTIVE',
+        100000000, 100000, 100000000,
+        $3, $4,
+        $5::date, $6::date,
+        'boost', $7, $8::jsonb,
+        $9
+      )
+      RETURNING id
+    `,
+      [
+        driver.student_id,
+        policyNumber,
+        monthlyPremiumCents,
+        quote.annualPremiumCents,
+        effective.toISOString().slice(0, 10),
+        expiry.toISOString().slice(0, 10),
+        `BOOST-TNC-${policyNumber}`,
+        JSON.stringify({
+          tncPeriods: ['PERIOD_2', 'PERIOD_3'],
+          perMileCents: quote.perMileCents,
+          vehicleUsage: 'RIDESHARE',
+          paperCarrier: 'BOOST_INSURANCE',
+        }),
+        'https://vecta.io/insurance/cards/tnc-placeholder.pdf',
+      ],
+    );
+
+    return {
+      policyId: String(row!.id),
+      policyNumber,
+      status: 'ACTIVE',
+      cardUrl: 'https://vecta.io/insurance/cards/tnc-placeholder.pdf',
+    };
+  }
+
+  private async getDriverProfile(driverId: string): Promise<{
+    id: string;
+    student_id: string;
+    rating: number;
+    vehicle_year: number | null;
+  }> {
+    const row = await queryOne<{
+      id: string;
+      student_id: string;
+      rating: string | null;
+      vehicle_year: number | null;
+    }>(
+      `SELECT id, student_id, rating, vehicle_year FROM driver_profiles WHERE id = $1`,
+      [driverId],
+    );
+    if (!row) {
+      throw new Error(`Driver not found: ${driverId}`);
+    }
+    return {
+      id: String(row.id),
+      student_id: String(row.student_id),
+      rating: Number(row.rating ?? 5),
+      vehicle_year: row.vehicle_year,
+    };
+  }
+
   private async getVerifiedStudentData(studentId: string): Promise<VerifiedStudentData> {
     const row = await queryOne(`
       SELECT

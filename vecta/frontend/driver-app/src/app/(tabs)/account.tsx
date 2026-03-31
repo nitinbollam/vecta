@@ -73,6 +73,23 @@ export default function AccountScreen() {
           </View>
         ) : null}
 
+        {status === 'APPROVED' && driver?.tnc_policy_status === 'ACTIVE' ? (
+          <View style={[styles.infoCard, { borderColor: '#00C896', borderWidth: 1 }]}>
+            <Text style={styles.infoTitle}>🛡️ Vecta Commercial Coverage — ACTIVE</Text>
+            <Text style={styles.infoValue}>
+              Policy: {String(driver.tnc_policy_number ?? '—')} · $1,000,000 liability
+            </Text>
+            <Text style={styles.infoSub}>Coverage activates when you accept a ride</Text>
+          </View>
+        ) : status === 'APPROVED' ? (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>🛡️ TNC coverage</Text>
+            <Text style={styles.infoSub}>
+              {String(driver?.tnc_policy_status ?? 'PENDING')} — Vecta MGA commercial policy for rides
+            </Text>
+          </View>
+        ) : null}
+
         {driver?.vehicle_make ? (
           <View style={styles.infoCard}>
             <Text style={styles.infoTitle}>Your Vehicle</Text>

@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { API_V1_BASE, getAuthHeaders } from '../../config/api';
 import { DriverColors, DriverSpacing, DriverFonts } from '../../constants/theme';
@@ -11,10 +19,49 @@ export default function EarningsScreen() {
     total_miles?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [payoutLoading, setPayoutLoading] = useState(false);
 
   useEffect(() => {
     void fetchEarnings();
   }, []);
+
+  const handleCashOut = () => {
+    const cents = earnings?.total_earnings_cents ?? 0;
+    Alert.alert(
+      'Cash Out',
+      `Transfer $${(cents / 100).toFixed(2)} to your bank account?\n\nACH transfer: 1-3 business days\nInstant: available soon`,
+      [
+        {
+          text: 'ACH Transfer (Free)',
+          onPress: async () => {
+            try {
+              setPayoutLoading(true);
+              const headers = await getAuthHeaders();
+              const res = await fetch(`${API_V1_BASE}/banking/driver/payout`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  amountCents: cents,
+                  method: 'ACH',
+                }),
+              });
+              const data = (await res.json()) as { payoutId?: string; error?: string };
+              if (!res.ok) throw new Error(data.error ?? 'Failed');
+              Alert.alert(
+                'Payout Initiated',
+                `$${(cents / 100).toFixed(2)} will arrive in your bank account within 1-3 business days.\n\nReference: ${data.payoutId ?? '—'}`,
+              );
+            } catch {
+              Alert.alert('Error', 'Could not initiate payout. Please try again.');
+            } finally {
+              setPayoutLoading(false);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
 
   async function fetchEarnings() {
     try {
@@ -75,6 +122,22 @@ export default function EarningsScreen() {
             mileage for deductions.
           </Text>
         </View>
+
+        {(earnings?.total_earnings_cents ?? 0) > 0 ? (
+          <TouchableOpacity
+            style={styles.cashOutButton}
+            onPress={handleCashOut}
+            disabled={payoutLoading}
+          >
+            {payoutLoading ? (
+              <ActivityIndicator color="#001F3F" />
+            ) : (
+              <Text style={styles.cashOutText}>
+                💳 Cash Out ${((earnings?.total_earnings_cents ?? 0) / 100).toFixed(2)}
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -92,4 +155,16 @@ const styles = StyleSheet.create({
   taxCard: { backgroundColor: '#0F1628', borderRadius: 16, padding: DriverSpacing['5'], marginTop: DriverSpacing['3'] },
   taxTitle: { fontSize: DriverFonts.base, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 },
   taxBody: { fontSize: DriverFonts.sm, color: '#A8B8C8', lineHeight: 20 },
+  cashOutButton: {
+    backgroundColor: '#00E6CC',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  cashOutText: {
+    color: '#001F3F',
+    fontWeight: '800',
+    fontSize: 16,
+  },
 });

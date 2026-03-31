@@ -3,7 +3,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +23,7 @@ export default function RideCompleteScreen() {
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [showDispute, setShowDispute] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -117,6 +118,52 @@ export default function RideCompleteScreen() {
         multiline
       />
 
+      <TouchableOpacity style={styles.reportLink} onPress={() => setShowDispute(true)} activeOpacity={0.8}>
+        <Text style={[styles.reportLinkText, { color: VectaColors.accent }]}>Report an issue with this ride</Text>
+      </TouchableOpacity>
+
+      {showDispute ? (
+        <View style={[styles.disputeSection, { borderColor: colors.border, backgroundColor: isDark ? '#152238' : VectaColors.surface1 }]}>
+          <Text style={[styles.disputeTitle, { color: colors.text }]}>What went wrong?</Text>
+          {[
+            'Wrong charge amount',
+            'Driver took wrong route',
+            'Driver no-show',
+            'Safety concern',
+            'Other issue',
+          ].map((option) => (
+            <TouchableOpacity
+              key={option}
+              style={[styles.disputeOption, { borderBottomColor: colors.border }]}
+              onPress={async () => {
+                if (!rideId) return;
+                try {
+                  const headers = await getAuthHeaders();
+                  const res = await fetch(`${API_V1_BASE}/mobility/rides/${rideId}/dispute`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                      category: 'RIDE_DISPUTE',
+                      description: option,
+                    }),
+                  });
+                  const data = (await res.json()) as { ticketNumber?: string };
+                  Alert.alert(
+                    'Dispute Filed',
+                    `Reference: ${data.ticketNumber ?? '—'}\nWe will review within 24 hours.`,
+                    [{ text: 'OK', onPress: () => router.replace('/(tabs)/rides') }],
+                  );
+                } catch {
+                  Alert.alert('Error', 'Could not file dispute.');
+                }
+              }}
+            >
+              <Text style={[styles.disputeOptionText, { color: colors.text }]}>{option}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+
       {err ? <Text style={styles.error}>{err}</Text> : null}
 
       <TouchableOpacity
@@ -171,4 +218,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   ctaText: { fontFamily: VectaFonts.bold, fontSize: 17, color: VectaColors.primary },
+  reportLink: { marginTop: 16, alignItems: 'center' },
+  reportLinkText: { fontFamily: VectaFonts.semiBold, fontSize: 14 },
+  disputeSection: {
+    marginTop: 16,
+    borderRadius: VectaRadius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  disputeTitle: { fontFamily: VectaFonts.bold, fontSize: 15, padding: 12 },
+  disputeOption: { paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  disputeOptionText: { fontFamily: VectaFonts.medium, fontSize: 14 },
 });

@@ -7,6 +7,10 @@ const logger = createLogger('driver-onboarding');
 
 const AUTHORIZED_WORK_TYPES = ['OPT', 'CPT', 'EAD', 'US_CITIZEN', 'PERMANENT_RESIDENT'];
 
+// Personal insurance is NOT used for ride coverage.
+// Vecta MGA issues a TNC policy that covers the driver from ride acceptance (Period 2) through dropoff (Period 3).
+// Personal insurance only needs to be valid for the driver's personal driving outside of Vecta rides.
+
 export async function applyAsDriver(
   studentId: string,
   params: {
@@ -17,8 +21,8 @@ export async function applyAsDriver(
     licenseState: string;
     licenseExpiry: string;
     licenseDocUrl: string;
-    insuranceDocUrl: string;
-    insuranceExpiry: string;
+    insuranceDocUrl?: string | null;
+    insuranceExpiry?: string | null;
     vehicleMake: string;
     vehicleModel: string;
     vehicleYear: number;
@@ -65,7 +69,7 @@ export async function applyAsDriver(
   if (new Date(params.licenseExpiry) <= new Date()) {
     throw new Error('Driver license is expired');
   }
-  if (new Date(params.insuranceExpiry) <= new Date()) {
+  if (params.insuranceExpiry && new Date(params.insuranceExpiry) <= new Date()) {
     throw new Error('Insurance document is expired');
   }
 
@@ -89,8 +93,8 @@ export async function applyAsDriver(
       params.licenseState,
       params.licenseExpiry,
       params.licenseDocUrl,
-      params.insuranceDocUrl,
-      params.insuranceExpiry,
+      params.insuranceDocUrl ?? null,
+      params.insuranceExpiry ?? null,
       params.vehicleMake,
       params.vehicleModel,
       params.vehicleYear,
@@ -121,7 +125,7 @@ export async function goOnline(driverId: string, lat: number, lng: number): Prom
   if (new Date(driver.license_expiry) <= new Date()) {
     throw new Error('Driver license has expired. Please update your documents.');
   }
-  if (new Date(driver.insurance_expiry) <= new Date()) {
+  if (driver.insurance_expiry && new Date(driver.insurance_expiry) <= new Date()) {
     throw new Error('Insurance has expired. Please update your documents.');
   }
 

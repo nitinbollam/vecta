@@ -3,7 +3,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Linking } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -171,7 +171,41 @@ export default function RideTrackingScreen() {
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.topTitle, { color: colors.text }]}>Track ride</Text>
-        <View style={{ width: 28 }} />
+        <TouchableOpacity
+          style={styles.emergencyButton}
+          hitSlop={12}
+          onPress={() =>
+            Alert.alert('🚨 Emergency', 'Are you in immediate danger?', [
+              {
+                text: 'Call 911',
+                style: 'destructive',
+                onPress: () => void Linking.openURL('tel:911'),
+              },
+              {
+                text: 'Share My Location',
+                onPress: async () => {
+                  try {
+                    const headers = await getAuthHeaders();
+                    await fetch(`${API_V1_BASE}/mobility/rides/${rideId}/dispute`, {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify({
+                        category: 'RIDE_DISPUTE',
+                        description: 'SAFETY EMERGENCY — student triggered emergency button',
+                      }),
+                    });
+                    Alert.alert('Safety team notified', 'Vecta safety team has been alerted with your location.');
+                  } catch {
+                    Alert.alert('Error', 'Could not notify safety team. Call 911 if you are in danger.');
+                  }
+                },
+              },
+              { text: 'Cancel', style: 'cancel' },
+            ])
+          }
+        >
+          <Text style={styles.emergencyButtonText}>🆘</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.mapWrap}>
@@ -295,6 +329,15 @@ const styles = StyleSheet.create({
     paddingVertical: VectaSpacing.sm,
   },
   topTitle: { fontFamily: VectaFonts.semiBold, fontSize: 18 },
+  emergencyButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239,68,68,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emergencyButtonText: { fontSize: 18 },
   mapWrap: { flex: 1, minHeight: 280 },
   mapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   sheet: {

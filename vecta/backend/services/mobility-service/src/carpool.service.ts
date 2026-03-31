@@ -552,4 +552,20 @@ export async function markRiderDroppedOff(stopId: string, driverId: string, actu
 
     logger.info({ stopId, rideId: stopRow.ride_id, actualFareCents }, 'Rider dropped off (carpool)');
   });
+
+  try {
+    const { recordRideFee } = await import('../../compliance-service/src/revenue.service');
+    const meta = await queryOne<{ fleet_vehicle_id: string | null }>(
+      `SELECT fleet_vehicle_id FROM rides WHERE id=$1`,
+      [stopRow.ride_id],
+    );
+    await recordRideFee({
+      rideId: stopRow.ride_id,
+      studentId: stopRow.rider_student_id,
+      fareCents: actualFareCents,
+      isFleetVehicle: Boolean(meta?.fleet_vehicle_id),
+    });
+  } catch (revErr) {
+    logger.error({ err: revErr, rideId: stopRow.ride_id }, 'Revenue recording failed (carpool)');
+  }
 }

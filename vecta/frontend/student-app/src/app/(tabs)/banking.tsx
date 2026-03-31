@@ -167,20 +167,14 @@ export default function BankingScreen() {
             icon: 'arrow-down-circle' as const,
             label: 'Add Money',
             color: VectaColors.success,
-            onPress: () => {
-              const store = useStudentStore.getState();
-              const routing = store.bankAccount?.routingNumber ?? 'Contact support';
-              const account = store.bankAccount?.accountNumber ?? 'Contact support';
-              Alert.alert(
-                'Add Money via ACH',
-                `Transfer funds to your Vecta account:\n\nRouting Number: ${routing}\nAccount Number: ${account}\n\nProcessing time: 1-3 business days`,
-                [
-                  { text: 'Copy Routing', onPress: () => void Clipboard.setStringAsync(routing) },
-                  { text: 'Copy Account', onPress: () => void Clipboard.setStringAsync(account) },
-                  { text: 'Done' },
-                ],
-              );
-            },
+            onPress: () =>
+              Alert.alert('Fund Your Vecta Account', 'How would you like to add money?', [
+                { text: '🇮🇳 India (UPI)', onPress: () => router.push('/banking/fund?method=india') },
+                { text: '🇬🇧 UK (Faster Payments)', onPress: () => router.push('/banking/fund?method=uk') },
+                { text: '🇪🇺 Europe (SEPA)', onPress: () => router.push('/banking/fund?method=eu') },
+                { text: '🇺🇸 US Bank (ACH)', onPress: () => router.push('/banking/fund?method=us') },
+                { text: 'Cancel', style: 'cancel' },
+              ]),
           },
           {
             icon: 'arrow-up-circle' as const,
