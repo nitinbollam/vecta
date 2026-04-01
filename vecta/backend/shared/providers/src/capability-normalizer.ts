@@ -82,6 +82,21 @@ export interface BankDataCapabilities {
   transactionHistoryDays:     number;
 }
 
+/** Insurance / MGA + paper carrier capabilities (metadata fields use string where noted). */
+export interface InsuranceCapabilities {
+  BIND_RENTERS_POLICY:      boolean;
+  BIND_AUTO_POLICY:         boolean;
+  BIND_HEALTH_POLICY:       boolean;
+  BIND_TNC_POLICY:          boolean;
+  SUBMIT_CLAIM:             boolean;
+  CANCEL_POLICY:            boolean;
+  GENERATE_DIGITAL_CARD:    boolean;
+  IN_APP_BINDING:           boolean;
+  PROPRIETARY_UNDERWRITING: boolean;
+  PAPER_CARRIER:            string;
+  MGA_LAYER:                boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Provider capability registry — ground truth for each vendor
 // ---------------------------------------------------------------------------
@@ -201,6 +216,22 @@ export const BANK_DATA_CAPABILITIES: Record<string, BankDataCapabilities> = {
     assetReportPollRequired:  false,
     webhookReadyEvent:        'account_created',
     transactionHistoryDays:   365,
+  },
+};
+
+export const INSURANCE_CAPABILITIES: Record<string, InsuranceCapabilities> = {
+  'vecta-mga': {
+    BIND_RENTERS_POLICY:      true,
+    BIND_AUTO_POLICY:         true,
+    BIND_HEALTH_POLICY:       true,
+    BIND_TNC_POLICY:          true,
+    SUBMIT_CLAIM:             true,
+    CANCEL_POLICY:            true,
+    GENERATE_DIGITAL_CARD:    true,
+    IN_APP_BINDING:           true,
+    PROPRIETARY_UNDERWRITING: true,
+    PAPER_CARRIER:            'BOOST_INSURANCE',
+    MGA_LAYER:                true,
   },
 };
 

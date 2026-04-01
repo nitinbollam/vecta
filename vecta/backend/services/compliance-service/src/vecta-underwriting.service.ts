@@ -16,6 +16,7 @@
 
 import { createLogger } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
+import { vectaMGA } from '@vecta/providers';
 
 const logger = createLogger('vecta-underwriting');
 
@@ -317,6 +318,42 @@ export class VectaUnderwritingEngine {
    * RIDE_TNC — commercial TNC coverage via Vecta MGA + Boost paper carrier.
    * Personal auto policies are not primary for on-platform rides.
    */
+  /**
+   * Bind via Vecta MGA (Boost paper). Does not persist; use policy service or TNC bind for DB rows.
+   */
+  async bindPolicy(
+    studentId: string,
+    params: {
+      policyType:          string;
+      coverageAmountCents: number;
+      deductibleCents:     number;
+      monthlyPremiumCents: number;
+      paperProvider:       string;
+      underwritingData:    Record<string, unknown>;
+    },
+  ): Promise<{ policyId: string; policyNumber: string; cardUrl: string }> {
+    const policyType = params.policyType as 'RENTERS' | 'AUTO' | 'HEALTH' | 'AUTO_TNC';
+
+    const result = await vectaMGA.bindPolicy({
+      studentId,
+      policyType,
+      coverageAmountCents: params.coverageAmountCents,
+      deductibleCents:     params.deductibleCents,
+      monthlyPremiumCents: params.monthlyPremiumCents,
+      underwritingData: {
+        ...params.underwritingData,
+        quotedPaperProvider: params.paperProvider,
+      },
+      paperProvider:       'BOOST_INSURANCE',
+    });
+
+    return {
+      policyId:     result.policyId,
+      policyNumber: result.policyNumber,
+      cardUrl:      result.cardUrl,
+    };
+  }
+
   async quoteTNCCoverage(driverId: string): Promise<{
     periodOneCents: number;
     periodTwoCents: number;
@@ -349,11 +386,26 @@ export class VectaUnderwritingEngine {
   }> {
     const quote = await this.quoteTNCCoverage(driverId);
     const driver = await this.getDriverProfile(driverId);
-    const policyNumber = `VECTA-TNC-${new Date().getFullYear()}-${String(driverId).replace(/-/g, '').slice(0, 8).toUpperCase()}`;
-    const monthlyPremiumCents = Math.round(quote.perMileCents * 1000);
+
+    const result = await vectaMGA.bindPolicy({
+      studentId:           driver.student_id,
+      policyType:          'AUTO_TNC',
+      coverageAmountCents: 100_000_000,
+      deductibleCents:     100_000,
+      monthlyPremiumCents: Math.round(quote.perMileCents * 1000),
+      underwritingData: {
+        tncPeriods:   ['PERIOD_2', 'PERIOD_3'],
+        perMileCents: quote.perMileCents,
+        vehicleUsage: 'RIDESHARE',
+      },
+      paperProvider: 'BOOST_INSURANCE',
+    });
+
     const effective = new Date();
     const expiry = new Date(effective);
     expiry.setFullYear(expiry.getFullYear() + 1);
+
+    const dbStatus = result.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT';
 
     const row = await queryOne<{ id: string }>(
       `
@@ -364,38 +416,40 @@ export class VectaUnderwritingEngine {
         effective_date, expiry_date,
         paper_provider, paper_policy_ref, underwriting_data, card_url
       ) VALUES (
-        $1, 'AUTO_TNC', $2, 'ACTIVE',
+        $1, 'AUTO_TNC', $2, $3,
         100000000, 100000, 100000000,
-        $3, $4,
-        $5::date, $6::date,
-        'boost', $7, $8::jsonb,
-        $9
+        $4, $5,
+        $6::date, $7::date,
+        'boost', $8, $9::jsonb,
+        $10
       )
       RETURNING id
     `,
       [
         driver.student_id,
-        policyNumber,
-        monthlyPremiumCents,
+        result.policyNumber,
+        dbStatus,
+        Math.round(quote.perMileCents * 1000),
         quote.annualPremiumCents,
         effective.toISOString().slice(0, 10),
         expiry.toISOString().slice(0, 10),
-        `BOOST-TNC-${policyNumber}`,
+        result.paperRef,
         JSON.stringify({
           tncPeriods: ['PERIOD_2', 'PERIOD_3'],
           perMileCents: quote.perMileCents,
           vehicleUsage: 'RIDESHARE',
           paperCarrier: 'BOOST_INSURANCE',
+          mgaPolicyId: result.policyId,
         }),
-        'https://vecta.io/insurance/cards/tnc-placeholder.pdf',
+        result.cardUrl || null,
       ],
     );
 
     return {
-      policyId: String(row!.id),
-      policyNumber,
-      status: 'ACTIVE',
-      cardUrl: 'https://vecta.io/insurance/cards/tnc-placeholder.pdf',
+      policyId:     String(row!.id),
+      policyNumber: result.policyNumber,
+      status:       result.status,
+      cardUrl:      result.cardUrl || `https://verify.vecta.io/insurance/${result.policyNumber}`,
     };
   }
 

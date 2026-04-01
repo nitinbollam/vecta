@@ -8,6 +8,7 @@
 import { randomBytes } from 'crypto';
 import { createLogger, logAuditEvent } from '@vecta/logger';
 import { query, queryOne } from '@vecta/database';
+import { BoostInsuranceAdapter, INSURANCE_PROVIDER, vectaMGA } from '@vecta/providers';
 
 const logger = createLogger('vecta-policy');
 
@@ -75,25 +76,42 @@ export class VectaPolicyService {
 
     const policyType = String(quoteRow.policy_type) as 'RENTERS' | 'AUTO' | 'HEALTH';
 
-    // Generate policy number: VECTA-RENTERS-2026-A3F7B2C1
-    const policyNumber = this.generatePolicyNumber(policyType);
-
     // Effective immediately, expires in 1 year
     const effectiveDate = new Date();
     const expiryDate    = new Date(Date.now() + 365 * 24 * 3600_000);
 
-    // Submit to paper provider
-    const paperRef = await this.submitToPaperProvider({
-      policyNumber,
-      policyType,
-      studentId,
-      monthlyPremiumCents: Number(quoteRow.monthly_premium_cents),
-      coverageAmountCents: Number(quoteRow.coverage_amount_cents),
-      deductibleCents:     Number(quoteRow.deductible_cents),
-      effectiveDate,
-      expiryDate,
-      paperProvider:       String(quoteRow.paper_provider),
-    });
+    const underwritingData = this.parseUnderwritingData(quoteRow.underwriting_data);
+
+    let policyNumber: string;
+    let paperRef: string;
+    let initialCardUrl: string | null = null;
+
+    if (INSURANCE_PROVIDER === 'boost') {
+      policyNumber = this.generatePolicyNumber(policyType);
+      paperRef = await this.submitBoostDirect({
+        policyNumber,
+        policyType,
+        studentId,
+        monthlyPremiumCents: Number(quoteRow.monthly_premium_cents),
+        coverageAmountCents: Number(quoteRow.coverage_amount_cents),
+        deductibleCents:     Number(quoteRow.deductible_cents),
+        effectiveDate,
+        expiryDate,
+      });
+    } else {
+      const bound = await vectaMGA.bindPolicy({
+        studentId,
+        policyType,
+        coverageAmountCents: Number(quoteRow.coverage_amount_cents),
+        deductibleCents:     Number(quoteRow.deductible_cents),
+        monthlyPremiumCents: Number(quoteRow.monthly_premium_cents),
+        underwritingData,
+        paperProvider:       'BOOST_INSURANCE',
+      });
+      policyNumber = bound.policyNumber;
+      paperRef     = bound.paperRef;
+      initialCardUrl = bound.cardUrl || null;
+    }
 
     // Insert policy
     const result = await query(`
@@ -103,8 +121,8 @@ export class VectaPolicyService {
         monthly_premium_cents, annual_premium_cents,
         effective_date, expiry_date,
         paper_provider, paper_policy_ref, paper_status,
-        underwriting_data
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'bound', $15)
+        underwriting_data, card_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'bound', $15, $16)
       RETURNING *
     `, [
       studentId,
@@ -122,6 +140,7 @@ export class VectaPolicyService {
       quoteRow.paper_provider,
       paperRef,
       quoteRow.underwriting_data,
+      initialCardUrl,
     ]);
 
     const policy = this.mapPolicy(result.rows[0]);
@@ -219,6 +238,9 @@ export class VectaPolicyService {
    *   - QR code linking to digital verification
    */
   private async generateAndAttachInsuranceCard(policy: InsurancePolicy): Promise<void> {
+    if (policy.cardUrl) {
+      return;
+    }
     try {
       const cardUrl = await this.uploadInsuranceCard(policy);
 
@@ -249,7 +271,26 @@ export class VectaPolicyService {
   // Paper provider integration
   // ---------------------------------------------------------------------------
 
-  private async submitToPaperProvider(params: {
+  private parseUnderwritingData(raw: unknown): Record<string, unknown> {
+    if (raw == null) return {};
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as Record<string, unknown>;
+    }
+    if (typeof raw === 'string') {
+      try {
+        const o = JSON.parse(raw) as unknown;
+        return typeof o === 'object' && o !== null && !Array.isArray(o)
+          ? (o as Record<string, unknown>)
+          : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  /** Direct Boost adapter path when `INSURANCE_PROVIDER=boost`. */
+  private async submitBoostDirect(params: {
     policyNumber:        string;
     policyType:          string;
     studentId:           string;
@@ -258,10 +299,8 @@ export class VectaPolicyService {
     deductibleCents:     number;
     effectiveDate:       Date;
     expiryDate:          Date;
-    paperProvider:       string;
   }): Promise<string> {
     try {
-      const { BoostInsuranceAdapter } = await import('../../../shared/providers/src/adapters/boost-insurance.adapter');
       const boost = new BoostInsuranceAdapter();
 
       const ref = await boost.submitPolicy({

@@ -1,22 +1,18 @@
 /**
- * packages/providers/src/adapters/boost-insurance.adapter.ts
+ * Boost Insurance Adapter — Paper Carrier
  *
- * Boost Insurance adapter — paper provider for Vecta MGA
+ * Role: Paper carrier only. Holds state licenses and reinsurance.
+ * Vecta is the MGA (Managing General Agent) layer above this.
  *
- * Boost Insurance (https://boostinsurance.io) acts as the "paper carrier":
- *   - They hold the insurance licenses in all 50 states
- *   - Vecta acts as the MGA (Managing General Agent) that does underwriting
- *   - Boost takes on the actual risk and regulatory obligations
- *   - Vecta earns a commission on each policy bound
+ * Direct usage: Only when vecta-mga adapter falls back here.
+ * Primary path: vecta-mga.adapter.ts → this file for final binding.
+ *
+ * Status: Awaiting MGA agreement — apply at boostinsurance.io/partners
  *
  * API: https://api.boostinsurance.io/v1
  *
- * ⚠️  Requires a Boost Insurance MGA agreement.
- *     Contact: sales@boostinsurance.io
- *     Timeline: 4-8 weeks for licensing and API access.
- *
- *     Until the agreement is in place, all methods return mock responses.
- *     The policy binds successfully in Vecta's DB but gets PENDING_* ref.
+ * Until the agreement is in place, all methods return mock responses.
+ * The policy binds successfully in Vecta's DB but gets PENDING_* ref.
  */
 
 import { createLogger } from '@vecta/logger';

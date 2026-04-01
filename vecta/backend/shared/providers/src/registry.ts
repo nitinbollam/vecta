@@ -8,7 +8,7 @@
  *   BANKING_PROVIDER=vecta-ledger  → VectaLedger          → fallback: unit
  *   BANK_DATA_PROVIDER=vecta-connect→VectaConnect (OB)    → fallback: plaid
  *   CREDIT_PROVIDER=vecta-bridge   → VectaCreditBridge    → fallback: nova
- *   INSURANCE_PROVIDER=vecta-mga   → VectaMGA             → fallback: lemonade
+ *   INSURANCE_PROVIDER=vecta-mga   → VectaMGA             → fallback: boost (direct)
  *
  * ── Legacy defaults (main branch) ───────────────────────────────────────────
  *   BANKING_PROVIDER=unit          → uses UnitProvider
@@ -36,6 +36,15 @@ import type {
 } from './interfaces';
 
 const logger = createLogger('provider-registry');
+
+/** Active insurance integration key (read by policy / underwriting services). */
+export const INSURANCE_PROVIDER =
+  process.env.INSURANCE_PROVIDER ?? 'vecta-mga';
+
+// Provider resolution order for insurance:
+// 1. vecta-mga (VectaMGAAdapter — in-house underwriting + Boost paper)
+// 2. boost (BoostInsuranceAdapter — direct, no MGA layer)
+// Lemonade removed as primary — redirect only
 
 // ---------------------------------------------------------------------------
 // Provider adapters (thin wrappers that implement the interface)
