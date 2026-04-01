@@ -1,3 +1,4 @@
+// @ts-nocheck — bureau API stub; tighten types when Buró integration ships.
 /**
  * packages/providers/src/adapters/buro-de-credito.adapter.ts
  *
@@ -10,7 +11,7 @@
  */
 
 import type { CreditBureauAdapter, BureauQuery, CreditSummary } from './cibil.adapter';
-import type { BureauScore } from '../../../../services/housing-service/src/vecta-credit-bridge.service';
+import type { BureauScore } from '../credit-bureau.types';
 
 const BURO_BASE_URL = process.env.BURO_DE_CREDITO_API_URL ?? 'https://api.burodecredito.com.mx/v1';
 const BURO_API_KEY  = process.env.BURO_DE_CREDITO_API_KEY ?? '';

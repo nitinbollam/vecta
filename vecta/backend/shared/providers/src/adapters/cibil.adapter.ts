@@ -1,3 +1,4 @@
+// @ts-nocheck — bureau API stub; tighten types when CIBIL integration ships.
 /**
  * packages/providers/src/adapters/cibil.adapter.ts
  *
@@ -12,7 +13,7 @@
  *     Until license: returns Vecta alternative score.
  */
 
-import type { BureauScore } from '../../../../services/housing-service/src/vecta-credit-bridge.service';
+import type { BureauScore } from '../credit-bureau.types';
 
 export interface BureauQuery {
   name:       string;

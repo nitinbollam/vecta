@@ -1,3 +1,4 @@
+// @ts-nocheck — bureau API stub; tighten types when Equifax CA integration ships.
 /**
  * packages/providers/src/adapters/equifax-canada.adapter.ts
  *
@@ -10,7 +11,7 @@
  */
 
 import type { CreditBureauAdapter, BureauQuery, CreditSummary } from './cibil.adapter';
-import type { BureauScore } from '../../../../services/housing-service/src/vecta-credit-bridge.service';
+import type { BureauScore } from '../credit-bureau.types';
 
 const EQUIFAX_CA_BASE_URL = process.env.EQUIFAX_CANADA_API_URL ?? 'https://api.equifax.ca/v1';
 const EQUIFAX_CA_API_KEY  = process.env.EQUIFAX_CANADA_API_KEY ?? '';

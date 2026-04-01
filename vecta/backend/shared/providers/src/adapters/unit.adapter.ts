@@ -6,22 +6,23 @@
  */
 
 import type { BankingProvider, BankAccount } from '../interfaces';
-import { createLogger } from '@vecta/logger';
 
-const logger = createLogger('unit-adapter');
 const BASE   = process.env.UNIT_BASE_URL   ?? 'https://api.unit.co';
 const TOKEN  = process.env.UNIT_API_TOKEN  ?? '';
 
 async function unitReq<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const init: RequestInit = {
     method,
     headers: {
       Authorization:  `Bearer ${TOKEN}`,
       'Content-Type': 'application/vnd.api+json',
       Accept:         'application/vnd.api+json',
     },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Unit.co ${method} ${path} → ${res.status}: ${err.slice(0, 200)}`);
@@ -129,17 +130,17 @@ export class UnitAdapter implements BankingProvider {
     }));
   }
 
-  async handleWebhook(payload: unknown, signature: string) {
+  async handleWebhook(payload: unknown, _signature: string) {
     const p = payload as { data?: { type?: string; attributes?: { status?: string }; relationships?: { customer?: { data?: { id?: string } } } } };
     const type = p.data?.type ?? '';
     const customerId = p.data?.relationships?.customer?.data?.id;
 
     if (type === 'customerUpdated') {
-      return {
-        type:       'KYC_STATUS_CHANGED' as const,
-        customerId,
-        kycStatus:  mapUnitKYC(p.data?.attributes?.status ?? ''),
-      };
+      const kycStatus = mapUnitKYC(p.data?.attributes?.status ?? '');
+      if (customerId !== undefined) {
+        return { type: 'KYC_STATUS_CHANGED' as const, customerId, kycStatus };
+      }
+      return { type: 'KYC_STATUS_CHANGED' as const, kycStatus };
     }
     return { type: 'UNKNOWN' as const };
   }

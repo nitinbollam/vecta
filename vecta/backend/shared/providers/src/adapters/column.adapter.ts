@@ -98,15 +98,18 @@ export class ColumnBankAdapter implements SponsorBankProvider {
       return this.getMockResponse<T>(method, path, body);
     }
 
-    const res = await fetch(`${COLUMN_BASE_URL}${path}`, {
+    const init: RequestInit = {
       method,
       headers: {
         'Authorization': `Bearer ${COLUMN_API_KEY}`,
         'Content-Type':  'application/json',
         'Column-Version': '2024-01-01',
       },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(`${COLUMN_BASE_URL}${path}`, init);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({})) as { message?: string };
@@ -157,12 +160,17 @@ export class ColumnBankAdapter implements SponsorBankProvider {
       settled_at?: string;
     }>('GET', `/v1/ach-transfers/${transferId}`);
 
-    return {
-      sponsorRef:  result.id,
-      status:      result.status,
-      returnCode:  result.return_code,
-      settledAt:   result.settled_at,
+    const out: ACHStatus = {
+      sponsorRef: result.id,
+      status:     result.status,
     };
+    if (result.return_code !== undefined) {
+      out.returnCode = result.return_code;
+    }
+    if (result.settled_at !== undefined) {
+      out.settledAt = result.settled_at;
+    }
+    return out;
   }
 
   async issueBINRange(prefix: string): Promise<BINRange> {
@@ -189,11 +197,14 @@ export class ColumnBankAdapter implements SponsorBankProvider {
       currency:          auth.currency,
     });
 
-    return {
-      approved:      result.approved,
-      authCode:      result.auth_code,
-      declineReason: result.decline_reason,
-    };
+    const out: AuthResponse = { approved: result.approved };
+    if (result.auth_code !== undefined) {
+      out.authCode = result.auth_code;
+    }
+    if (result.decline_reason !== undefined) {
+      out.declineReason = result.decline_reason;
+    }
+    return out;
   }
 
   async getBalance(accountNumber: string): Promise<number> {
@@ -205,7 +216,7 @@ export class ColumnBankAdapter implements SponsorBankProvider {
   }
 
   /** Mock responses for testing without a real Column account */
-  private getMockResponse<T>(method: string, path: string, body?: object): T {
+  private getMockResponse<T>(method: string, path: string, _body?: object): T {
     if (path.includes('/bank-accounts') && method === 'POST') {
       return { account_number: `40000${Date.now().toString().slice(-8)}0` } as unknown as T;
     }

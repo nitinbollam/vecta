@@ -35,15 +35,18 @@ export class ClearBankAdapter implements SponsorBankProvider {
       return this.getMockResponse<T>(path);
     }
 
-    const res = await fetch(`${CLEARBANK_BASE_URL}${path}`, {
+    const init: RequestInit = {
       method,
       headers: {
         'Authorization': `Bearer ${CLEARBANK_API_KEY}`,
         'Content-Type':  'application/json; charset=utf-8',
         'X-Request-Id':  crypto.randomUUID(),
       },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(`${CLEARBANK_BASE_URL}${path}`, init);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({})) as { title?: string };
@@ -103,18 +106,21 @@ export class ClearBankAdapter implements SponsorBankProvider {
       settledDate?: string;
     }>('GET', `/v1/transactions/${transferId}`);
 
-    return {
+    const out: ACHStatus = {
       sponsorRef: result.transactionId,
       status:     result.status,
-      settledAt:  result.settledDate,
     };
+    if (result.settledDate !== undefined) {
+      out.settledAt = result.settledDate;
+    }
+    return out;
   }
 
   async issueBINRange(prefix: string): Promise<BINRange> {
     return { prefix, network: 'MASTERCARD', productCode: 'DEBIT_PREMIUM' };
   }
 
-  async processCardTransaction(auth: CardAuthorization): Promise<AuthResponse> {
+  async processCardTransaction(_auth: CardAuthorization): Promise<AuthResponse> {
     return { approved: true, authCode: 'CB_MOCK_AUTH' };
   }
 

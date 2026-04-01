@@ -140,11 +140,15 @@ export class StripeTreasuryAdapter implements BankingProvider {
   async handleWebhook(payload: unknown, _signature: string) {
     const p = payload as { type?: string; data?: { object?: { customer?: string; verification?: { status?: string } } } };
     if (p.type === 'identity.verification_session.verified') {
-      return {
-        type:      'KYC_STATUS_CHANGED' as const,
-        customerId: p.data?.object?.customer,
-        kycStatus: 'APPROVED' as const,
-      };
+      const customerId = p.data?.object?.customer;
+      if (customerId !== undefined) {
+        return {
+          type:       'KYC_STATUS_CHANGED' as const,
+          customerId,
+          kycStatus:  'APPROVED' as const,
+        };
+      }
+      return { type: 'KYC_STATUS_CHANGED' as const, kycStatus: 'APPROVED' as const };
     }
     return { type: 'UNKNOWN' as const };
   }

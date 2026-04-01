@@ -31,7 +31,6 @@
  */
 
 import { createLogger, logComplianceEvent } from '@vecta/logger';
-import type { BankingProvider, IdentityProvider, BankDataProvider } from './interfaces';
 
 const logger = createLogger('capability-normalizer');
 
@@ -476,18 +475,23 @@ export function normalizeWebhookEvent(
       ?? '';
 
     if (rawEvent === caps.kycWebhookEvent) {
+      const customerId = extractCustomerId(rawPayload);
       if (rawStatus === caps.kycApprovedWebhookStatus) {
-        return {
-          canonical:   'KYC_APPROVED',
-          customerId:  extractCustomerId(rawPayload, providerName),
-          rawEvent,
-          rawStatus,
-        };
+        if (customerId !== undefined) {
+          return { canonical: 'KYC_APPROVED', customerId, rawEvent, rawStatus };
+        }
+        return { canonical: 'KYC_APPROVED', rawEvent, rawStatus };
       }
       if (rawStatus === 'Archived' || rawStatus === 'unverified') {
-        return { canonical: 'KYC_REJECTED', customerId: extractCustomerId(rawPayload, providerName), rawEvent, rawStatus };
+        if (customerId !== undefined) {
+          return { canonical: 'KYC_REJECTED', customerId, rawEvent, rawStatus };
+        }
+        return { canonical: 'KYC_REJECTED', rawEvent, rawStatus };
       }
-      return { canonical: 'KYC_REVIEW', customerId: extractCustomerId(rawPayload, providerName), rawEvent, rawStatus };
+      if (customerId !== undefined) {
+        return { canonical: 'KYC_REVIEW', customerId, rawEvent, rawStatus };
+      }
+      return { canonical: 'KYC_REVIEW', rawEvent, rawStatus };
     }
   }
 
@@ -515,7 +519,7 @@ function extractNestedValue(obj: Record<string, unknown>, path: string): string 
   return typeof current === 'string' ? current : undefined;
 }
 
-function extractCustomerId(payload: Record<string, unknown>, providerName: string): string | undefined {
+function extractCustomerId(payload: Record<string, unknown>): string | undefined {
   // Unit.co: data.relationships.customer.data.id
   const unitId = extractNestedValue(payload, 'data.relationships.customer.data.id');
   if (unitId) return unitId;

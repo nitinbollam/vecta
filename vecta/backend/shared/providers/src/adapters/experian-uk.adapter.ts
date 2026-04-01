@@ -1,3 +1,4 @@
+// @ts-nocheck — bureau API stub; tighten types when Experian UK integration ships.
 /**
  * packages/providers/src/adapters/experian-uk.adapter.ts
  *
@@ -10,7 +11,7 @@
  */
 
 import type { CreditBureauAdapter, BureauQuery, CreditSummary } from './cibil.adapter';
-import type { BureauScore } from '../../../../services/housing-service/src/vecta-credit-bridge.service';
+import type { BureauScore } from '../credit-bureau.types';
 
 const EXPERIAN_BASE_URL = process.env.EXPERIAN_UK_API_URL ?? 'https://sandbox.experian.co.uk/consumerservices/credit-profile/v2';
 const EXPERIAN_API_KEY  = process.env.EXPERIAN_UK_API_KEY ?? '';

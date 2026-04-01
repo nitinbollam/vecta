@@ -4,9 +4,10 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "skipLibCheck": true,
+    "noEmit": false,
     "paths": {
-      "@vecta/logger": ["../logger/src/index.ts"],
-      "@vecta/types":  ["../types/src/index.ts"]
+      "@vecta/logger": ["../logger/dist/index.d.ts"],
+      "@vecta/types": ["../types/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*"]

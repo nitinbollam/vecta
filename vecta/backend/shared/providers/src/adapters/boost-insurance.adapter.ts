@@ -74,15 +74,18 @@ export class BoostInsuranceAdapter {
       return this.getMockResponse<T>(path, body);
     }
 
-    const res = await fetch(`${BOOST_BASE_URL}${path}`, {
+    const init: RequestInit = {
       method,
       headers: {
         'X-API-Key':    BOOST_API_KEY,
         'Content-Type': 'application/json',
         'X-MGA-License': process.env.MGA_LICENSE_NUMBER ?? '',
       },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(`${BOOST_BASE_URL}${path}`, init);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({})) as { error?: string };

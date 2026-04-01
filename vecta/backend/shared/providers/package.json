@@ -5,10 +5,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build --prefix ../logger && npm run build --prefix ../types && tsc",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@vecta/database": "*",
     "@vecta/logger": "*",
     "@vecta/types": "*"
   },

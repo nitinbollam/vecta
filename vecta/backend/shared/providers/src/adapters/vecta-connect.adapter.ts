@@ -1,32 +1,73 @@
-// @ts-nocheck — stub adapter vs BankDataProvider interface; align signatures in a focused PR.
 /**
  * packages/providers/src/adapters/vecta-connect.adapter.ts
  * Thin BankDataProvider adapter wrapping VectaConnect.
  */
 
-import type { BankDataProvider } from '../interfaces';
+import type { AssetReport, BankDataProvider, LinkTokenResult } from '../interfaces';
+import { importBankingServiceModule } from './runtime-service-import';
 
 export class VectaConnectAdapter implements BankDataProvider {
   readonly name = 'vecta-connect';
+  readonly supportsInternationalBanks = true;
 
-  async createLinkToken(studentId: string, products: string[]): Promise<string> {
-    const { VectaConnect } = await import('../../../../services/banking-service/src/vecta-connect.service');
+  async createLinkToken(studentId: string, products: string[]): Promise<LinkTokenResult> {
+    void products;
+    const mod = await importBankingServiceModule('vecta-connect.service');
+    const VectaConnect = mod.VectaConnect as new () => {
+      getLinkUrl: (
+        sid: string,
+        bankId: string,
+        redirect: string,
+      ) => Promise<{ linkUrl: string; state: string }>;
+    };
     const connect = new VectaConnect();
     const result  = await connect.getLinkUrl(studentId, 'default', 'vecta://connect/callback');
-    return result.linkUrl;
+    return {
+      linkToken:    result.linkUrl,
+      expiresAt:    new Date(Date.now() + 3600_000).toISOString(),
+      providerName: this.name,
+    };
   }
 
-  async exchangePublicToken(token: string): Promise<string> {
-    return token;  // VectaConnect tokens are already access tokens after callback
+  async exchangePublicToken(publicToken: string): Promise<{ accessToken: string; itemId: string }> {
+    return { accessToken: publicToken, itemId: publicToken };
   }
 
-  async getAssetReport(accessToken: string, days: number): Promise<unknown> {
-    const { VectaConnect } = await import('../../../../services/banking-service/src/vecta-connect.service');
+  async getAssetReport(accessToken: string, daysRequested: number): Promise<AssetReport> {
+    void daysRequested;
+    const mod = await importBankingServiceModule('vecta-connect.service');
+    const VectaConnect = mod.VectaConnect as new () => {
+      generateAssetReport: (connectionId: string) => Promise<{
+        connectionId: string;
+        reportDate: Date;
+        averageMonthlyBalance: number;
+        currency: string;
+      }>;
+    };
     const connect = new VectaConnect();
-    return connect.generateAssetReport(accessToken);
+    const r       = await connect.generateAssetReport(accessToken);
+    const balanceUsd = r.averageMonthlyBalance / 100;
+    const verifiedAt = r.reportDate.toISOString();
+    return {
+      reportId:        r.connectionId,
+      totalBalanceUsd: balanceUsd,
+      accounts:        [
+        {
+          institutionName: 'Connected bank',
+          type:            'CHECKING',
+          balanceUsd:      balanceUsd,
+          verifiedAt,
+        },
+      ],
+      verifiedAt,
+      providerName: this.name,
+    };
   }
 
-  async handleWebhook(payload: unknown): Promise<void> {
-    // VectaConnect uses per-connector webhooks, not a unified webhook endpoint
+  async handleWebhook(_payload: unknown): Promise<{
+    type: 'ITEM_ERROR' | 'ASSET_REPORT_READY' | 'AUTH_GRANTED' | 'UNKNOWN';
+    itemId?: string;
+  }> {
+    return { type: 'UNKNOWN' };
   }
 }
