@@ -5,10 +5,9 @@
     "rootDir": "./src",
     "skipLibCheck": true,
     "noEmit": false,
-    "paths": {
-      "@vecta/logger": ["../logger/dist/index.d.ts"],
-      "@vecta/types": ["../types/dist/index.d.ts"]
-    }
+    "declaration": true,
+    "declarationMap": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

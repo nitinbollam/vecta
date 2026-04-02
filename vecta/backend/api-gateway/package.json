@@ -22,6 +22,7 @@
     "@vecta/crypto": "*",
     "@vecta/database": "*",
     "@vecta/logger": "*",
+    "@vecta/providers": "*",
     "@vecta/storage": "*",
     "@vecta/types": "*",
     "axios": "^1.6.0",
