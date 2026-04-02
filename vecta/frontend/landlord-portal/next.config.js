@@ -1,14 +1,12 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
 
-  serverRuntimeConfig: {
-    VECTA_INTERNAL_API_URL: process.env.VECTA_INTERNAL_API_URL ?? 'http://api-gateway:4000',
-    VECTA_JWT_PUBLIC_KEY:   process.env.VECTA_JWT_PUBLIC_KEY ?? '',
-  },
-
-  publicRuntimeConfig: {
-    APP_URL: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+  // Monorepo: `next` is hoisted to `vecta/node_modules`; lockfile is at `vecta/package-lock.json`.
+  turbopack: {
+    root: path.join(__dirname, '..', '..'),
   },
 
   async headers() {
