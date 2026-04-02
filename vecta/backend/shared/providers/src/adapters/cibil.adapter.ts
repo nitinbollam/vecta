@@ -1,6 +1,6 @@
 // @ts-nocheck — bureau API stub; tighten types when CIBIL integration ships.
 /**
- * packages/providers/src/adapters/cibil.adapter.ts
+ * backend/shared/providers/src/adapters/cibil.adapter.ts
  *
  * CIBIL (Credit Information Bureau India Limited) adapter
  * India's primary credit bureau — covers 550M+ consumers.

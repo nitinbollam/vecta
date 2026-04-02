@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/stripe-treasury.adapter.ts
+ * backend/shared/providers/src/adapters/stripe-treasury.adapter.ts
  *
  * Stripe Treasury implementation of BankingProvider.
  * Hot standby for Unit.co. Swap with BANKING_PROVIDER=stripe.

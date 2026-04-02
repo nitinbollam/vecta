@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/vecta-connect.adapter.ts
+ * backend/shared/providers/src/adapters/vecta-connect.adapter.ts
  * Thin BankDataProvider adapter wrapping VectaConnect.
  */
 

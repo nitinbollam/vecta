@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/column.adapter.ts
+ * backend/shared/providers/src/adapters/column.adapter.ts
  *
  * Column Bank adapter — sponsor bank for Vecta Ledger
  *

@@ -1,6 +1,6 @@
 // @ts-nocheck — bureau API stub; tighten types when Experian UK integration ships.
 /**
- * packages/providers/src/adapters/experian-uk.adapter.ts
+ * backend/shared/providers/src/adapters/experian-uk.adapter.ts
  *
  * Experian UK credit bureau adapter
  * Score range: 0-999 (881+ = Excellent, 721-880 = Good, 561-720 = Fair)

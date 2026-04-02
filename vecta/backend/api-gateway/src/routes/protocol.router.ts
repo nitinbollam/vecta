@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/protocol.router.ts
+ * backend/api-gateway/src/routes/protocol.router.ts
  *
  * Trust Certificate Protocol API — beyond tenant validation.
  *

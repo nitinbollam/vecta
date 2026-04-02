@@ -128,7 +128,7 @@ export const SOPs = {
       'Bank account data: delete 90 days after account closure',
       'Student right-to-deletion requests are honored EXCEPT for BSA records',
     ],
-    codeBinding: 'packages/database/migrations/001_initial_schema.sql (retention policies)',
+    codeBinding: 'backend/shared/database/migrations/001_initial_schema.sql (retention policies)',
   },
 } as const;
 

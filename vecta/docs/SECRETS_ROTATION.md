@@ -14,7 +14,7 @@ Rotation procedure:
 6. Remove the old key from the environment.
 7. Restart all services.
 
-The script at `apps/api-gateway/scripts/reencrypt-pii.ts` reads encrypted columns, decrypts with the current key, and writes back with `encryptField` (assumes a single active key in env). Extend `@vecta/crypto` for true dual-key rotation if you need zero-downtime transitions.
+The script at `backend/api-gateway/scripts/reencrypt-pii.ts` reads encrypted columns, decrypts with the current key, and writes back with `encryptField` (assumes a single active key in env). Extend `@vecta/crypto` for true dual-key rotation if you need zero-downtime transitions.
 
 ## INTERNAL_SERVICE_SECRET rotation
 

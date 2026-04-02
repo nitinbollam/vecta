@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/banking.router.ts
+ * backend/api-gateway/src/routes/banking.router.ts
  *
  * Vecta Ledger Banking Routes — replaces Unit.co
  *

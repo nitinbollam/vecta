@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/compliance.router.ts
+ * backend/api-gateway/src/routes/compliance.router.ts
  *
  * Compliance Operations API:
  *

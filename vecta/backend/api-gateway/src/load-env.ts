@@ -3,7 +3,7 @@
  * `@vecta/crypto` and others read `process.env` at module load time.
  *
  * Resolution order (later files override earlier keys):
- *   vecta/.env → vecta/env/local.env → apps/api-gateway/.env
+ *   vecta/.env → vecta/env/local.env → backend/api-gateway/.env
  */
 import fs from "fs";
 import path from "path";

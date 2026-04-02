@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/registry.ts
+ * backend/shared/providers/src/registry.ts
  *
  * Provider registry with automatic failover.
  *
@@ -10,7 +10,7 @@
  *   CREDIT_PROVIDER=vecta-bridge   → VectaCreditBridge    → fallback: nova
  *   INSURANCE_PROVIDER=vecta-mga   → VectaMGA             → fallback: boost (direct)
  *
- * ── Legacy defaults (main branch) ───────────────────────────────────────────
+ * ── External-first stacks (set via env; no in-house adapter) ───────────────
  *   BANKING_PROVIDER=unit          → uses UnitProvider
  *   BANKING_PROVIDER=stripe        → uses StripeProvider (standby)
  *   IDENTITY_PROVIDER=didit        → uses DiditProvider

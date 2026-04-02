@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/token.router.ts
+ * backend/api-gateway/src/routes/token.router.ts
  *
  * Student token management:
  *   GET    /api/v1/identity/tokens              — list active tokens

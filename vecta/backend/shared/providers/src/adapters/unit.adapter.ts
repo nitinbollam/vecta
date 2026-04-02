@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/unit.adapter.ts
+ * backend/shared/providers/src/adapters/unit.adapter.ts
  *
  * Unit.co implementation of BankingProvider.
  * Wraps the existing unit.service.ts with the standardised interface.

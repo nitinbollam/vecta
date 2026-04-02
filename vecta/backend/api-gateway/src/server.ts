@@ -1,4 +1,4 @@
-// apps/api-gateway/src/server.ts
+// backend/api-gateway/src/server.ts
 // ─── Vecta API Gateway — Express (TypeScript) ────────────────────────────────
 // The single external-facing entrypoint. Routes all traffic to microservices.
 
@@ -37,14 +37,23 @@ export interface ServiceStatus {
 }
 
 export const services: Record<string, ServiceStatus> = {
-  didit:    { available: false, reason: "startup not complete" },
-  unit:     { available: false, reason: "startup not complete" },
-  plaid:    { available: false, reason: "startup not complete" },
-  nova:     { available: false, reason: "startup not complete" },
-  checkr:   { available: false, reason: "startup not complete" },
-  sendgrid: { available: false, reason: "startup not complete" },
-  lemonade: { available: false, reason: "startup not complete" },
-  esim:     { available: false, reason: "startup not complete" },
+  // ── In-house primary services ──────────────────────────
+  "vecta-id":      { available: false, reason: "startup not complete" },
+  "vecta-ledger":  { available: false, reason: "startup not complete" },
+  "vecta-connect": { available: false, reason: "startup not complete" },
+  "vecta-bridge":  { available: false, reason: "startup not complete" },
+  "vecta-mga":     { available: false, reason: "startup not complete" },
+  // ── Required external dependencies ────────────────────
+  sendgrid:        { available: false, reason: "startup not complete" },
+  "esim-go":       { available: false, reason: "startup not complete" },
+  column:          { available: false, reason: "startup not complete" },
+  // ── Fallback adapters ──────────────────────────────────
+  didit:           { available: false, reason: "fallback only" },
+  unit:            { available: false, reason: "fallback only" },
+  plaid:           { available: false, reason: "fallback only" },
+  nova:            { available: false, reason: "fallback only" },
+  boost:           { available: false, reason: "paper carrier for vecta-mga" },
+  checkr:          { available: false, reason: "startup not complete" },
 };
 
 /**
@@ -248,14 +257,15 @@ async function bootstrap() {
   }
 
   // ── Optional service config checks (warn, never crash) ──────────────────
-  checkServiceConfig("didit",    ["DIDIT_API_KEY", "DIDIT_API_URL"]);
-  checkServiceConfig("unit",     ["UNIT_API_TOKEN", "UNIT_API_URL"]);
-  checkServiceConfig("plaid",    ["PLAID_CLIENT_ID", "PLAID_SECRET", "LOC_SIGNING_KEY"]);
-  checkServiceConfig("nova",     ["NOVA_CREDIT_API_KEY", "NOVA_CREDIT_API_URL"]);
-  checkServiceConfig("checkr",   ["CHECKR_API_KEY", "CHECKR_WEBHOOK_SECRET"]);
-  checkServiceConfig("sendgrid", ["SENDGRID_API_KEY"]);
-  checkServiceConfig("lemonade", ["LEMONADE_API_KEY", "LEMONADE_PARTNER_ID", "LEMONADE_API_URL"]);
-  checkServiceConfig("esim",     ["ESIM_GO_API_KEY", "ESIM_GO_API_URL"]);
+  checkServiceConfig("vecta-id",      ["KYC_ENCRYPTION_KEY"]);
+  checkServiceConfig("vecta-ledger",  ["COLUMN_BANK_API_KEY"]);
+  checkServiceConfig("vecta-connect", ["PLAID_CLIENT_ID", "PLAID_SECRET"]);
+  checkServiceConfig("vecta-bridge",  ["NOVA_CREDIT_API_KEY", "NOVA_CREDIT_API_URL"]);
+  checkServiceConfig("vecta-mga",     ["BOOST_INSURANCE_API_KEY"]);
+  checkServiceConfig("sendgrid",      ["SENDGRID_API_KEY"]);
+  checkServiceConfig("esim-go",       ["ESIM_GO_API_KEY", "ESIM_GO_API_URL"]);
+  checkServiceConfig("column",        ["COLUMN_BANK_API_KEY", "COLUMN_BANK_API_URL"]);
+  checkServiceConfig("checkr",        ["CHECKR_API_KEY", "CHECKR_WEBHOOK_SECRET"]);
 
   // ── Redis connection (hard-fail after retries) ───────────────────────────
   for (let i = 0; i < STARTUP_ATTEMPTS; i++) {
@@ -334,20 +344,20 @@ async function bootstrap() {
 
   if (directMode) {
     await mountOr503(
-      { mountPath: "/api/v1/identity", module: "./routes/identity.router", exportKey: "identityRouter", service: "didit" },
+      { mountPath: "/api/v1/identity", module: "./routes/identity.router", exportKey: "identityRouter", service: "vecta-id" },
       authMiddlewareOptional(redis),
       tokenRateLimiter,
     );
     await mountOr503(
-      { mountPath: "/api/v1/banking", module: "./routes/banking.router", exportKey: "bankingRouter", service: "unit" },
+      { mountPath: "/api/v1/banking", module: "./routes/banking.router", exportKey: "bankingRouter", service: "vecta-ledger" },
       authMiddleware(redis),
     );
     await mountOr503(
-      { mountPath: "/api/v1/housing", module: "./routes/housing.router", exportKey: "housingRouter", service: "plaid" },
+      { mountPath: "/api/v1/housing", module: "./routes/housing.router", exportKey: "housingRouter", service: "vecta-connect" },
       authMiddleware(redis),
     );
     await mountOr503(
-      { mountPath: "/api/v1/mobility", module: "./routes/mobility.router", exportKey: "mobilityRouter", service: "unit" },
+      { mountPath: "/api/v1/mobility", module: "./routes/mobility.router", exportKey: "mobilityRouter", service: "vecta-ledger" },
       authMiddleware(redis),
     );
   } else {
@@ -361,12 +371,12 @@ async function bootstrap() {
   v1Merged.use(authMiddleware(redis));
 
   const v1Specs: RouteLoad[] = [
-    { mountPath: "/", module: "./routes/token.router", exportKey: "tokenRouter", service: "didit" },
+    { mountPath: "/", module: "./routes/token.router", exportKey: "tokenRouter", service: "vecta-id" },
     { mountPath: "/", module: "./routes/auth.router", exportKey: "authRouter", service: "sendgrid" },
-    { mountPath: "/", module: "./routes/insurance.router", exportKey: "insuranceRouter", service: "lemonade" },
-    { mountPath: "/", module: "./routes/certificate.router", exportKey: "certificateRouter", service: "didit" },
+    { mountPath: "/", module: "./routes/insurance.router", exportKey: "insuranceRouter", service: "vecta-mga" },
+    { mountPath: "/", module: "./routes/certificate.router", exportKey: "certificateRouter", service: "vecta-id" },
     { mountPath: "/", module: "./routes/compliance.router", exportKey: "complianceRouter", service: "checkr" },
-    { mountPath: "/", module: "./routes/protocol.router", exportKey: "protocolRouter", service: "plaid" },
+    { mountPath: "/", module: "./routes/protocol.router", exportKey: "protocolRouter", service: "vecta-bridge" },
     { mountPath: "/", module: "./routes/landlord.router", exportKey: "landlordRouter", service: "checkr" },
   ];
 

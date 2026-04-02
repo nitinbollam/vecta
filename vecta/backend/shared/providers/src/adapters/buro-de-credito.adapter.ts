@@ -1,6 +1,6 @@
 // @ts-nocheck — bureau API stub; tighten types when Buró integration ships.
 /**
- * packages/providers/src/adapters/buro-de-credito.adapter.ts
+ * backend/shared/providers/src/adapters/buro-de-credito.adapter.ts
  *
  * Buró de Crédito adapter — Mexico's primary credit bureau
  * Score range: 442-850

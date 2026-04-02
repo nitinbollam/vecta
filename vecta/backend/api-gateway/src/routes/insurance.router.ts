@@ -1,7 +1,8 @@
 /**
- * apps/api-gateway/src/routes/insurance.router.ts
+ * backend/api-gateway/src/routes/insurance.router.ts
  *
- * Vecta MGA Insurance Routes — replaces Lemonade, ISO, PSI
+ * Insurance HTTP routes — quotes and bind flow through compliance-service;
+ * bind uses Vecta MGA adapter when INSURANCE_PROVIDER=vecta-mga (default).
  *
  * POST /api/v1/insurance/quote/renters    → VectaUnderwriting.quoteRenters
  * POST /api/v1/insurance/quote/auto       → VectaUnderwriting.quoteAuto

@@ -1,6 +1,6 @@
 // @ts-nocheck — bureau API stub; tighten types when Equifax CA integration ships.
 /**
- * packages/providers/src/adapters/equifax-canada.adapter.ts
+ * backend/shared/providers/src/adapters/equifax-canada.adapter.ts
  *
  * Equifax Canada credit bureau adapter
  * Score range: 300-900 (760+ = Excellent, 725-759 = Very Good)

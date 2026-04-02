@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/vecta-bridge.adapter.ts
+ * backend/shared/providers/src/adapters/vecta-bridge.adapter.ts
  * Thin CreditProvider adapter wrapping VectaCreditBridge.
  */
 

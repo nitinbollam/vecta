@@ -8,11 +8,10 @@
 - [ ] Set `VECTA_FIELD_ENCRYPTION_KEY` to a 48-char random base64 string: `openssl rand -base64 48`
 - [ ] Set `VECTA_HMAC_SECRET` to a 64-char random string: `openssl rand -base64 64`
 - [ ] Set `INTERNAL_SERVICE_SECRET` — shared secret for service-to-service HMAC auth
-- [ ] Set all integration API keys (Didit, Unit.co, Plaid, Nova Credit, eSIM Go, Lemonade, OpenAI, Anthropic)
+- [ ] Set integration keys as needed: identity (Didit, …), banking (Unit, Plaid, Column/Boost, …), credit bureaus, eSIM, `BOOST_INSURANCE_*`, `INSURANCE_PROVIDER`, optional Lemonade, AI providers
 
 ### Database
-- [ ] Run migration 001: `psql $DATABASE_URL -f packages/database/migrations/001_initial_schema.sql`
-- [ ] Run migration 002: `psql $DATABASE_URL -f packages/database/migrations/002_plaid_connections.sql`
+- [ ] Run migrations (from repo `vecta/` root): `npm run db:migrate` — or manually: `psql $DATABASE_URL -f backend/shared/database/migrations/<NNN>_*.sql` in numeric order
 - [ ] Verify pgvector extension: `psql $DATABASE_URL -c "SELECT extname FROM pg_extension WHERE extname='vector'"`
 - [ ] Verify append-only rules on `flight_recorder`: `psql $DATABASE_URL -c "\d+ flight_recorder"`
 - [ ] Enable SSL: set `DATABASE_URL` with `?sslmode=require`
@@ -78,7 +77,7 @@
 ```bash
 # Build all images
 docker buildx build --platform linux/amd64 \
-  -f apps/api-gateway/Dockerfile \
+  -f backend/api-gateway/Dockerfile \
   -t $ECR_REGISTRY/vecta/api-gateway:$VERSION \
   --push .
 

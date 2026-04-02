@@ -1,4 +1,4 @@
--- packages/database/migrations/001_initial_schema.sql
+-- backend/shared/database/migrations/001_initial_schema.sql
 -- Vecta Platform — Initial Schema
 -- Run order: this file only. Subsequent files are numbered 002_, 003_, etc.
 

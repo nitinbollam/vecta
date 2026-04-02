@@ -19,6 +19,7 @@ We aim to respond within 48 hours and provide a fix timeline within 7 days for c
 - Authentication and token handling
 - PII encryption and storage
 - Certificate issuance and verification
+- Third-party credentials (banking, identity, insurance/MGA, paper carrier APIs) when misconfiguration could expose customer data
 
 **Out of scope**
 

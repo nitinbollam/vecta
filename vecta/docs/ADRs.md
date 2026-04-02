@@ -173,3 +173,28 @@ Revoked JTIs are added to the set with TTL matching token expiry.
 - Production fail-closed means a Redis outage blocks authenticated traffic — acceptable tradeoff
   given the data sensitivity
 - Revocation set is ephemeral — entries auto-expire, no maintenance needed
+
+---
+
+## ADR-007: `@vecta/providers` — Vertical Fortress adapter boundary
+
+**Date:** 2026-03  
+**Status:** Accepted (vertical-fortress branch)
+
+### Context
+Vecta is moving critical integrations in-house (identity, ledger, open banking, credit routing, insurance MGA)
+while keeping **explicit** fallback adapters (Unit, Plaid, Nova, Boost direct, etc.) for reliability and migration.
+
+### Decision
+- Shared package **`backend/shared/providers`**: vendor interfaces (`interfaces.ts`), registry (`registry.ts`),
+  capability metadata (`capability-normalizer.ts`), and adapter implementations.
+- **Default env keys** document in `registry.ts` (e.g. `BANKING_PROVIDER=vecta-ledger`, `INSURANCE_PROVIDER=vecta-mga`).
+- **Insurance binding** is driven by `INSURANCE_PROVIDER` and `vecta-mga.adapter.ts` / `boost-insurance.adapter.ts`,
+  not by the core `ProviderRegistry` object (which covers banking, identity, bank data, credit, eSIM only).
+- **`tsc` for `@vecta/providers`** keeps `rootDir: ./src`; path aliases point at **built** `../logger/dist` and `../types/dist`
+  so sibling package sources are not pulled into the emit graph (avoids TS6059). The package `build` script builds
+  logger and types first.
+
+### Consequences
+- Compliance and policy code imports `@vecta/providers` for MGA/Boost; gateway may still label legacy service names in config.
+- Documentation and comments should refer to **`backend/shared/providers`**, not historical `packages/providers` paths.

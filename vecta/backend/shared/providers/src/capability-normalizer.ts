@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/capability-normalizer.ts
+ * backend/shared/providers/src/capability-normalizer.ts
  *
  * Capability Normalization Layer.
  *

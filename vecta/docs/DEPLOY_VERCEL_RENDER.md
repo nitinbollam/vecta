@@ -30,7 +30,7 @@ If you create the **Node web service manually** (not from blueprint), set:
 |--------|--------|
 | **Root Directory** | `vecta` |
 | **Build Command** | `npm ci --include=dev && npx turbo run build --filter=api-gateway...` |
-| **Start Command** | `cd apps/api-gateway && node dist/server.js` |
+| **Start Command** | `cd backend/api-gateway && node dist/server.js` |
 
 Do **not** use `cd vecta/apps/...` when Root Directory is already `vecta` (that doubles the path).
 
@@ -41,10 +41,10 @@ Do **not** use `cd vecta/apps/...` when Root Directory is already `vecta` (that 
 1. **Migrations** — Run SQL migrations against the Render database (from your machine or a one-off job), same order as `package.json` `db:migrate`:
 
    ```bash
-   psql "$DATABASE_URL" -f packages/database/migrations/001_initial_schema.sql
-   psql "$DATABASE_URL" -f packages/database/migrations/002_plaid_connections.sql
-   psql "$DATABASE_URL" -f packages/database/migrations/003_compliance_trust.sql
-   psql "$DATABASE_URL" -f packages/database/migrations/004_compliance_network.sql
+   psql "$DATABASE_URL" -f backend/shared/database/migrations/001_initial_schema.sql
+   psql "$DATABASE_URL" -f backend/shared/database/migrations/002_plaid_connections.sql
+   psql "$DATABASE_URL" -f backend/shared/database/migrations/003_compliance_trust.sql
+   psql "$DATABASE_URL" -f backend/shared/database/migrations/004_compliance_network.sql
    ```
 
    Use the **External Database URL** from the Render Postgres dashboard as `DATABASE_URL`.
@@ -59,7 +59,7 @@ Do **not** use `cd vecta/apps/...` when Root Directory is already `vecta` (that 
 
 ### Option B — Docker Web Service (API gateway only)
 
-The repo includes `apps/api-gateway/Dockerfile`, which must be built with **repository root** as Docker context (the file copies `packages/*` and runs Turbo). On Render: **New Web Service** → **Docker**, root directory `.`, Dockerfile path `apps/api-gateway/Dockerfile`. You still need Postgres, Redis, and env vars as above.
+The repo includes `backend/api-gateway/Dockerfile`, which must be built with **repository root** as Docker context (the file copies workspace packages and runs Turbo). On Render: **New Web Service** → **Docker**, root directory `.`, Dockerfile path `backend/api-gateway/Dockerfile`. You still need Postgres, Redis, and env vars as above.
 
 ---
 
@@ -92,10 +92,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 Then run Vecta’s migrations (same order as `npm run db:migrate`), pointing `DATABASE_URL` at Supabase:
 
 ```bash
-psql "$DATABASE_URL" -f packages/database/migrations/001_initial_schema.sql
-psql "$DATABASE_URL" -f packages/database/migrations/002_plaid_connections.sql
-psql "$DATABASE_URL" -f packages/database/migrations/003_compliance_trust.sql
-psql "$DATABASE_URL" -f packages/database/migrations/004_compliance_network.sql
+psql "$DATABASE_URL" -f backend/shared/database/migrations/001_initial_schema.sql
+psql "$DATABASE_URL" -f backend/shared/database/migrations/002_plaid_connections.sql
+psql "$DATABASE_URL" -f backend/shared/database/migrations/003_compliance_trust.sql
+psql "$DATABASE_URL" -f backend/shared/database/migrations/004_compliance_network.sql
 ```
 
 ### 4. Render blueprint without Render Postgres

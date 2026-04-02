@@ -1,6 +1,6 @@
 // @ts-nocheck — stub adapter vs IdentityProvider interface; align signatures in a focused PR.
 /**
- * packages/providers/src/adapters/vecta-id.adapter.ts
+ * backend/shared/providers/src/adapters/vecta-id.adapter.ts
  *
  * Thin IdentityProvider adapter wrapping the VectaID NFC service.
  * Implements the same BankingProvider interface as Didit for seamless failover.

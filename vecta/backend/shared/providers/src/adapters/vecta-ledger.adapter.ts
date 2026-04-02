@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/vecta-ledger.adapter.ts
+ * backend/shared/providers/src/adapters/vecta-ledger.adapter.ts
  *
  * Thin BankingProvider adapter wrapping VectaLedger.
  * Implements the same interface as Unit.co for seamless failover.

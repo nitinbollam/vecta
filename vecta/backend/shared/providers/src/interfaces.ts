@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/interfaces.ts
+ * backend/shared/providers/src/interfaces.ts
  *
  * Vendor-agnostic provider contracts.
  *
@@ -8,15 +8,17 @@
  *
  * Swap strategy:
  *   1. Add a new class implementing the interface
- *   2. Update PROVIDER_CONFIG[service] in registry.ts
- *   3. Deploy — zero schema changes, zero application code changes
+ *   2. Wire it in registry.ts (getProviderRegistry) and/or env vars (*_PROVIDER, *_FALLBACK)
+ *   3. Deploy — zero schema changes for consumers that only use these types
  *
- * Current implementations:
- *   Banking:     UnitProvider  (primary) → StripeProvider (standby)
- *   Identity:    DiditProvider (primary) → PersonaProvider (standby)
- *   BankData:    PlaidProvider (primary) → MXProvider (standby)
- *   Credit:      NovaCreditProvider (primary) → FairplayProvider (standby)
- *   eSIM:        ESIMGoProvider (primary) → AloSIMProvider (standby)
+ * Vertical Fortress defaults (see registry.ts):
+ *   Banking:     VectaLedger → Unit → Stripe Treasury
+ *   Identity:    VectaID → Didit → Persona
+ *   Bank data:   VectaConnect → Plaid → MX
+ *   Credit:      VectaBridge → Nova → Fairplay
+ *   eSIM:        ESIMGo → AloSIM
+ * Insurance binding is not on this registry: use INSURANCE_PROVIDER (default vecta-mga) and
+ *   @vecta/providers exports (VectaMGAAdapter, BoostInsuranceAdapter) from compliance/policy code.
  */
 
 // ---------------------------------------------------------------------------

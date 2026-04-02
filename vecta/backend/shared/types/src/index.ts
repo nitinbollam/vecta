@@ -71,7 +71,7 @@ export interface VectaIDTokenPayload {
   verifiedEmail: string;
 
   // Financial summary — presented to landlord (no raw figures)
-  vectaTrustScore: number;       // 300–850 Nova Credit translated score
+  vectaTrustScore: number;       // 300–850 US-equivalent score (Vecta Credit Bridge / bureau path)
   trustScoreTier: "EXCELLENT" | "GOOD" | "FAIR" | "BUILDING";
   solvencyGuaranteeMonths: number;
   letterOfCreditId: string;      // UUID of the signed LoC PDF
@@ -143,7 +143,7 @@ export const UnitCustomerCreateSchema = z.object({
 
 export type UnitCustomerCreate = z.infer<typeof UnitCustomerCreateSchema>;
 
-// ─── Nova Credit ──────────────────────────────────────────────────────────────
+// ─── International credit (Vecta Credit Bridge; Nova as optional bureau path) ─
 
 export interface NovaCreditResult {
   cashScore: number;          // 300–850 translated to US-equivalent
@@ -195,7 +195,7 @@ export interface InsuranceQuote {
   coverageLimit?: number;
   quoteId: string;
   expiresAt: string;
-  /** Carrier-specific coverage payload (e.g. Lemonade). */
+  /** Carrier-specific coverage payload (legacy Lemonade/ISO shapes allowed). */
   coverageDetails?: Record<string, unknown>;
   bindUrl?: string;
   warnings?: string[];

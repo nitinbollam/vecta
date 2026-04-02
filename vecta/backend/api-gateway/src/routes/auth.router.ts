@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/auth.router.ts
+ * backend/api-gateway/src/routes/auth.router.ts
  *
  * Student authentication:
  *   POST /api/v1/auth/magic-link    — generate + email a one-time sign-in link

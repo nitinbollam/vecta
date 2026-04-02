@@ -1,17 +1,11 @@
 /**
  * services/compliance-service/src/vecta-underwriting.service.ts
  *
- * Vecta Proprietary Underwriting Engine — replaces Lemonade, ISO, PSI
+ * Vecta proprietary underwriting — quotes for renters/auto/health/TNC before bind.
+ * Policy binding goes through VectaMGAAdapter (@vecta/providers) + DB policy service.
  *
- * Competitive advantage:
- *   Traditional insurers price F-1 students as high-risk unknowns.
- *   Vecta can price LOWER because we have verified:
- *     - NFC passport identity (not an anonymous applicant)
- *     - Real bank balance via VectaConnect (not self-reported)
- *     - University enrollment (low-risk demographic)
- *     - Solvency tier (payment reliability indicator)
- *
- * This lets us undercut Lemonade by 10-30% while remaining profitable.
+ * Uses verified student signals (NFC identity, VectaConnect balances, enrollment,
+ * solvency tier) so pricing can be sharper than generic carrier web quotes for F-1s.
  */
 
 import { createLogger } from '@vecta/logger';
@@ -114,7 +108,7 @@ export class VectaUnderwritingEngine {
   /**
    * Quote renters insurance for a verified Vecta student.
    *
-   * Base rate: $8/month (vs Lemonade's $10-15)
+   * Base rate: $8/month (benchmark: many US renters carriers ~$10–15/mo for generic quotes)
    * Discounts available only to Vecta verified students — our key moat.
    */
   async quoteRenters(studentId: string): Promise<InsuranceQuote> {

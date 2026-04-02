@@ -1,14 +1,11 @@
 /**
  * app/(tabs)/insurance.tsx
  *
- * Vecta MGA Insurance Tab — full in-app policy flow
+ * Student insurance tab — API-backed quotes/bind where configured (Vecta underwriting + MGA path).
  *
- * Replaces external Lemonade, ISO, PSI redirects with in-house:
- *   - Real-time quotes from VectaUnderwritingEngine
- *   - In-app policy binding
- *   - Digital insurance card display
- *   - In-app claims filing
- *   - University health plan PDF checker (compliance AI)
+ * - Quotes / bind / claims / card: gateway → compliance-service (see INSURANCE_PROVIDER / MGA adapter).
+ * - Some UI paths still link out to Lemonade for renters/auto (legacy comparison flow).
+ * - University health plan PDF analysis: compliance AI endpoint.
  */
 
 import React, { useState, useCallback } from 'react';

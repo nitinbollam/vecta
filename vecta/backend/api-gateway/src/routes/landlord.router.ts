@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/landlord.router.ts
+ * backend/api-gateway/src/routes/landlord.router.ts
  *
  * Landlord-specific routes not in token.router.ts:
  *   POST /api/v1/landlord/background-check/initiate  — start Checkr check

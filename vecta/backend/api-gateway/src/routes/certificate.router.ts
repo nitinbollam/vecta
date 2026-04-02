@@ -1,5 +1,5 @@
 /**
- * apps/api-gateway/src/routes/certificate.router.ts
+ * backend/api-gateway/src/routes/certificate.router.ts
  *
  * Trust Certificate endpoints:
  *

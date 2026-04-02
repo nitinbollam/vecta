@@ -1,5 +1,5 @@
 /**
- * packages/providers/src/adapters/clearbank.adapter.ts
+ * backend/shared/providers/src/adapters/clearbank.adapter.ts
  *
  * ClearBank adapter — alternative sponsor bank for Vecta Ledger (UK-first)
  *
